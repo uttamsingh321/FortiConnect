@@ -125,6 +125,22 @@ class TestGroupConversations:
         assert response.status_code == 201
         assert response.data["name"] == "Engineering Chat"
 
+    def test_create_group_conversation_empty_description_and_members(self, alice_client, alice):
+        """Alice can create a group with empty description and empty member_ids."""
+        response = alice_client.post(
+            "/api/conversations/",
+            {
+                "type": "group",
+                "name": "General Chat",
+                "description": "",
+                "member_ids": [],
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+        assert response.data["name"] == "General Chat"
+        assert len(response.data["memberships"]) == 1
+
     def test_non_admin_cannot_add_member(self, bob_client, group_conversation, db):
         """Bob (member) cannot add a new member to the group."""
         from apps.employees.models import Employee

@@ -48,11 +48,7 @@ class MembershipSerializer(serializers.ModelSerializer):
 
 class ConversationSerializer(serializers.ModelSerializer):
     """Serializer for conversation list."""
-    memberships = MembershipSerializer(
-        many=True,
-        read_only=True,
-        source="memberships_active",  # annotated by view
-    )
+    memberships = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.IntegerField(read_only=True, default=0)
 
@@ -64,6 +60,12 @@ class ConversationSerializer(serializers.ModelSerializer):
             "memberships", "last_message", "unread_count",
         ]
         read_only_fields = fields
+
+    def get_memberships(self, obj):
+        members = getattr(obj, "memberships_active", None)
+        if members is None:
+            members = obj.memberships.filter(removed_at__isnull=True).select_related("employee")
+        return MembershipSerializer(members, many=True).data
 
     def get_last_message(self, obj):
         last = obj.messages.filter(deleted_at__isnull=True).order_by("-created_at").first()
@@ -85,7 +87,7 @@ class CreateDirectConversationSerializer(serializers.Serializer):
 
 class CreateGroupConversationSerializer(serializers.Serializer):
     name = serializers.CharField(min_length=1, max_length=100)
-    description = serializers.CharField(max_length=500, required=False, default="")
+    description = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
     member_ids = serializers.ListField(
         child=serializers.IntegerField(),
         min_length=0,

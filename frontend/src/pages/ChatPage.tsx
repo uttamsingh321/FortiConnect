@@ -124,8 +124,13 @@ export const ChatPage: React.FC = () => {
       setShowCreateGroup(false);
       await loadConversations();
       setActiveConversationId(newConv.id);
-    } catch {
-      alert('Failed to create group');
+    } catch (err: any) {
+      const detail =
+        err.response?.data?.detail ||
+        (err.response?.data?.name ? `Name: ${err.response.data.name.join(', ')}` : null) ||
+        (err.response?.data?.description ? `Description: ${err.response.data.description.join(', ')}` : null) ||
+        'Failed to create group. Please try again.';
+      alert(`Failed to create group: ${detail}`);
     }
   };
 
