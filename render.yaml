@@ -3,7 +3,7 @@ services:
     name: forticonnect-backend
     runtime: python
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && python manage.py migrate --noinput && python manage.py seed_data
     startCommand: daphne -b 0.0.0.0 -p $PORT forticonnect.asgi:application
     envVars:
       - key: PYTHON_VERSION
