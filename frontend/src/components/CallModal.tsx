@@ -8,7 +8,7 @@ interface CallModalProps {
   onClose: () => void;
   sendSignal: (payload: any) => void;
   incomingOffer?: any;
-  incomingSignal?: any;
+  onRegisterSignalListener?: (listener: (signal: any) => void) => void;
 }
 
 const ICE_SERVERS: RTCConfiguration = {
@@ -16,10 +16,12 @@ const ICE_SERVERS: RTCConfiguration = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.services.mozilla.com' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
   ],
 };
 
-// Pure Web Audio API tone generator for incoming ringtone & outgoing dial tone
+// Web Audio API phone ringtone & dial tone synthesizer
 class RingtonePlayer {
   private ctx: AudioContext | null = null;
   private intervalId: any = null;
@@ -41,7 +43,7 @@ class RingtonePlayer {
         const osc2 = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
 
-        // Dual frequency tones: 440Hz + 480Hz (standard phone ring)
+        // 440Hz + 480Hz dual frequency
         osc1.type = 'sine';
         osc2.type = 'sine';
         osc1.frequency.setValueAtTime(440, now);
@@ -90,33 +92,35 @@ export const CallModal: React.FC<CallModalProps> = ({
   onClose,
   sendSignal,
   incomingOffer,
-  incomingSignal,
+  onRegisterSignalListener,
 }) => {
-  const [callStatus, setCallStatus] = useState<'ringing' | 'connected' | 'ended'>(
-    'ringing'
-  );
+  const [callStatus, setCallStatus] = useState<'ringing' | 'connected' | 'ended'>('ringing');
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(callType === 'voice');
   const [callDuration, setCallDuration] = useState(0);
   const [mediaNotice, setMediaNotice] = useState<string | null>(null);
 
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
+
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
+  const pendingIceCandidatesRef = useRef<any[]>([]);
   const ringtoneRef = useRef<RingtonePlayer>(new RingtonePlayer());
 
   const cleanup = useCallback(() => {
     ringtoneRef.current.stop();
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
-      localStreamRef.current = null;
+    if (localStream) {
+      localStream.getTracks().forEach((t) => t.stop());
     }
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
-  }, []);
+  }, [localStream]);
 
   // Ringtone playback lifecycle
   useEffect(() => {
@@ -130,46 +134,93 @@ export const CallModal: React.FC<CallModalProps> = ({
     };
   }, [callStatus, isIncoming]);
 
-  // Handle incoming signals (answer, ice-candidate, end)
-  useEffect(() => {
-    if (!incomingSignal) return;
-    if (incomingSignal.conversation_id !== conversationId) return;
+  // Helper: Flush queued ICE candidates after remote description is set
+  const drainPendingIceCandidates = async (pc: RTCPeerConnection) => {
+    while (pendingIceCandidatesRef.current.length > 0) {
+      const candidateData = pendingIceCandidatesRef.current.shift();
+      if (candidateData) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidateData));
+        } catch (err) {
+          console.warn('Failed to add queued ICE candidate', err);
+        }
+      }
+    }
+  };
 
-    const handleSignal = async () => {
+  // Direct synchronous signal handler
+  const handleIncomingSignal = useCallback(
+    async (signal: any) => {
+      if (!signal || signal.conversation_id !== conversationId) return;
+
       const pc = peerConnectionRef.current;
 
-      if (incomingSignal.type === 'call.answer') {
+      if (signal.type === 'call.answer') {
         if (pc && pc.signalingState === 'have-local-offer') {
           try {
-            await pc.setRemoteDescription(new RTCSessionDescription(incomingSignal.payload));
+            await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
+            await drainPendingIceCandidates(pc);
             setCallStatus('connected');
           } catch (err) {
-            console.error('Failed to set remote answer description', err);
+            console.error('Failed to set remote answer on caller', err);
           }
         }
-      } else if (incomingSignal.type === 'call.ice-candidate') {
-        if (pc && incomingSignal.payload) {
+      } else if (signal.type === 'call.ice-candidate') {
+        const candData = signal.payload;
+        if (!candData) return;
+
+        if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) {
+          pendingIceCandidatesRef.current.push(candData);
+        } else {
           try {
-            await pc.addIceCandidate(new RTCIceCandidate(incomingSignal.payload));
+            await pc.addIceCandidate(new RTCIceCandidate(candData));
           } catch (err) {
-            console.warn('Failed to add remote ICE candidate', err);
+            console.warn('Failed to add incoming ICE candidate', err);
           }
         }
-      } else if (incomingSignal.type === 'call.end') {
+      } else if (signal.type === 'call.end') {
         setCallStatus('ended');
         cleanup();
-        setTimeout(onClose, 800);
+        setTimeout(onClose, 600);
       }
-    };
+    },
+    [conversationId, cleanup, onClose]
+  );
 
-    handleSignal();
-  }, [incomingSignal, conversationId, cleanup, onClose]);
+  // Register signal listener with parent ChatPage
+  useEffect(() => {
+    if (onRegisterSignalListener) {
+      onRegisterSignalListener(handleIncomingSignal);
+    }
+  }, [onRegisterSignalListener, handleIncomingSignal]);
 
-  // Initialize WebRTC
+  // Attach local stream to video element
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play().catch(() => {});
+    }
+  }, [localStream]);
+
+  // Attach remote stream to video & audio elements
+  useEffect(() => {
+    if (remoteStream) {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = remoteStream;
+        remoteVideoRef.current.play().catch((e) => console.warn('Remote video playback error', e));
+      }
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = remoteStream;
+        remoteAudioRef.current.play().catch((e) => console.warn('Remote audio playback error', e));
+      }
+    }
+  }, [remoteStream, callStatus]);
+
+  // Initialize WebRTC Peer Connection and Local Media
   useEffect(() => {
     let active = true;
 
-    const setupMedia = async () => {
+    const setupConnection = async () => {
       try {
         let stream: MediaStream;
         try {
@@ -179,12 +230,10 @@ export const CallModal: React.FC<CallModalProps> = ({
           });
         } catch (e1) {
           try {
-            // Fallback to audio only
             stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
             setMediaNotice('Camera unavailable, joined with microphone audio');
           } catch (e2) {
-            // Emulate empty stream for testing without media hardware
-            console.warn('No media devices available, continuing in signaling mode', e2);
+            console.warn('No physical media devices available, using empty MediaStream', e2);
             stream = new MediaStream();
             setMediaNotice('Simulated media connection (no camera/mic detected)');
           }
@@ -195,39 +244,54 @@ export const CallModal: React.FC<CallModalProps> = ({
           return;
         }
 
-        localStreamRef.current = stream;
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
+        setLocalStream(stream);
 
         const pc = new RTCPeerConnection(ICE_SERVERS);
         peerConnectionRef.current = pc;
 
-        // Add local tracks
+        // Add tracks to PeerConnection
         stream.getTracks().forEach((track) => {
           pc.addTrack(track, stream);
         });
 
-        // Remote track arrival
+        // Remote track handler
         pc.ontrack = (event) => {
-          if (remoteVideoRef.current && event.streams[0]) {
-            remoteVideoRef.current.srcObject = event.streams[0];
-            setCallStatus('connected');
+          console.log('[WebRTC] Received remote track:', event.track.kind);
+          let rStream = event.streams && event.streams[0];
+          if (!rStream) {
+            rStream = new MediaStream([event.track]);
           }
+          setRemoteStream(rStream);
+          setCallStatus('connected');
         };
 
-        // ICE candidate exchange
+        // ICE candidate handler
         pc.onicecandidate = (event) => {
           if (event.candidate) {
             sendSignal({
               type: 'call.ice-candidate',
               conversation_id: conversationId,
-              payload: event.candidate,
+              payload: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate,
             });
           }
         };
 
-        // If initiating, create and broadcast offer
+        // Connection state tracking
+        pc.onconnectionstatechange = () => {
+          console.log('[WebRTC] Connection state:', pc.connectionState);
+          if (pc.connectionState === 'connected') {
+            setCallStatus('connected');
+          }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+          console.log('[WebRTC] ICE Connection state:', pc.iceConnectionState);
+          if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+            setCallStatus('connected');
+          }
+        };
+
+        // Caller initiates offer
         if (!isIncoming) {
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
@@ -239,11 +303,11 @@ export const CallModal: React.FC<CallModalProps> = ({
           });
         }
       } catch (err) {
-        console.error('Failed to establish WebRTC media pipeline', err);
+        console.error('[WebRTC] Setup failed', err);
       }
     };
 
-    setupMedia();
+    setupConnection();
 
     return () => {
       active = false;
@@ -251,23 +315,27 @@ export const CallModal: React.FC<CallModalProps> = ({
     };
   }, [callType, conversationId, isIncoming, sendSignal, cleanup]);
 
-  // Callee answers call
+  // Callee accepts incoming call
   const handleAcceptCall = async () => {
     const pc = peerConnectionRef.current;
-    if (pc && incomingOffer) {
-      try {
-        await pc.setRemoteDescription(new RTCSessionDescription(incomingOffer));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        sendSignal({
-          type: 'call.answer',
-          conversation_id: conversationId,
-          payload: answer,
-        });
-        setCallStatus('connected');
-      } catch (err) {
-        console.error('Failed to answer incoming call', err);
-      }
+    if (!pc || !incomingOffer) return;
+
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(incomingOffer));
+      await drainPendingIceCandidates(pc);
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      sendSignal({
+        type: 'call.answer',
+        conversation_id: conversationId,
+        payload: answer,
+      });
+
+      setCallStatus('connected');
+    } catch (err) {
+      console.error('[WebRTC] Failed to answer call', err);
     }
   };
 
@@ -283,18 +351,18 @@ export const CallModal: React.FC<CallModalProps> = ({
 
   // Toggle Mute
   const toggleMute = () => {
-    if (localStreamRef.current) {
-      localStreamRef.current.getAudioTracks().forEach((track) => {
+    if (localStream) {
+      localStream.getAudioTracks().forEach((track) => {
         track.enabled = !track.enabled;
       });
       setIsMuted(!isMuted);
     }
   };
 
-  // Toggle Video
+  // Toggle Camera
   const toggleVideo = () => {
-    if (localStreamRef.current) {
-      localStreamRef.current.getVideoTracks().forEach((track) => {
+    if (localStream) {
+      localStream.getVideoTracks().forEach((track) => {
         track.enabled = !track.enabled;
       });
       setIsVideoOff(!isVideoOff);
@@ -318,6 +386,8 @@ export const CallModal: React.FC<CallModalProps> = ({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const isVideoAvailable = callType === 'video' && remoteStream && remoteStream.getVideoTracks().length > 0;
+
   return (
     <div style={styles.modalOverlay}>
       <div className="fc-call-modal-box" style={styles.modalContainer}>
@@ -336,7 +406,7 @@ export const CallModal: React.FC<CallModalProps> = ({
               {callStatus === 'ringing'
                 ? isIncoming
                   ? 'Incoming call...'
-                  : 'Ringing...'
+                  : 'Ringing employee...'
                 : callStatus === 'connected'
                 ? formatDuration(callDuration)
                 : 'Call Ended'}
@@ -354,6 +424,9 @@ export const CallModal: React.FC<CallModalProps> = ({
 
         {/* Video / Audio Stage */}
         <div style={styles.videoStage}>
+          {/* Remote Audio Track (always attached so sound is guaranteed) */}
+          <audio ref={remoteAudioRef} autoPlay playsInline />
+
           {/* Remote Video Stream */}
           <video
             ref={remoteVideoRef}
@@ -361,11 +434,12 @@ export const CallModal: React.FC<CallModalProps> = ({
             playsInline
             style={{
               ...styles.remoteVideo,
-              display: callType === 'video' && callStatus === 'connected' ? 'block' : 'none',
+              display: isVideoAvailable && callStatus === 'connected' ? 'block' : 'none',
             }}
           />
 
-          {(callType === 'voice' || callStatus === 'ringing') && (
+          {/* Voice / Connecting Placeholder */}
+          {(!isVideoAvailable || callStatus !== 'connected') && (
             <div style={styles.voicePlaceholder}>
               <div
                 style={{
@@ -375,7 +449,7 @@ export const CallModal: React.FC<CallModalProps> = ({
               >
                 {contactName.charAt(0).toUpperCase()}
               </div>
-              <h4 style={{ margin: '1rem 0 0.25rem', color: '#f8fafc', fontSize: '1.1rem' }}>
+              <h4 style={{ margin: '1rem 0 0.25rem', color: '#f8fafc', fontSize: '1.2rem' }}>
                 {contactName}
               </h4>
               <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.9rem' }}>
@@ -384,7 +458,9 @@ export const CallModal: React.FC<CallModalProps> = ({
                     ? 'Incoming Call from Employee...'
                     : 'Ringing employee devices...'
                   : callStatus === 'connected'
-                  ? 'Voice Call Connected'
+                  ? callType === 'video'
+                    ? 'Connecting video stream...'
+                    : 'Voice Call Connected'
                   : 'Call Ended'}
               </p>
             </div>
@@ -410,11 +486,11 @@ export const CallModal: React.FC<CallModalProps> = ({
           {isIncoming && callStatus === 'ringing' ? (
             <div style={styles.incomingActions}>
               <button onClick={handleAcceptCall} style={styles.acceptButton}>
-                <span style={{ marginRight: '0.4rem' }}>📞</span>
+                <span style={{ marginRight: '0.5rem', fontSize: '1.1rem' }}>📞</span>
                 Accept Call
               </button>
               <button onClick={handleEndCall} style={styles.hangupButton}>
-                <span style={{ marginRight: '0.4rem' }}>✕</span>
+                <span style={{ marginRight: '0.5rem', fontSize: '1.1rem' }}>✕</span>
                 Decline
               </button>
             </div>
@@ -439,7 +515,7 @@ export const CallModal: React.FC<CallModalProps> = ({
               )}
 
               <button onClick={handleEndCall} style={styles.hangupButton}>
-                <span style={{ marginRight: '0.4rem' }}>☎</span>
+                <span style={{ marginRight: '0.5rem', fontSize: '1.1rem' }}>☎</span>
                 End Call
               </button>
             </div>
@@ -512,12 +588,13 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid #312e81',
   },
   videoStage: {
-    height: '380px',
+    height: '400px',
     backgroundColor: '#020617',
     position: 'relative',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   remoteVideo: {
     width: '100%',
@@ -532,12 +609,12 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
   },
   voiceAvatar: {
-    width: '90px',
-    height: '90px',
+    width: '94px',
+    height: '94px',
     borderRadius: '50%',
     backgroundColor: '#0284c7',
     color: '#ffffff',
-    fontSize: '2.5rem',
+    fontSize: '2.6rem',
     fontWeight: '700',
     display: 'flex',
     alignItems: 'center',
@@ -548,13 +625,14 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'absolute',
     bottom: '16px',
     right: '16px',
-    width: '140px',
-    height: '105px',
+    width: '144px',
+    height: '108px',
     borderRadius: '10px',
     overflow: 'hidden',
     border: '2px solid #38bdf8',
     backgroundColor: '#1e293b',
     boxShadow: '0 8px 20px rgba(0, 0, 0, 0.6)',
+    zIndex: 10,
   },
   localVideo: {
     width: '100%',
@@ -570,6 +648,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '1px 5px',
     borderRadius: '3px',
     color: '#ffffff',
+    fontWeight: '600',
   },
   toolbar: {
     padding: '1.25rem',

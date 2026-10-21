@@ -51,12 +51,7 @@ export const ChatPage: React.FC = () => {
     contactName: string;
   } | null>(null);
 
-  const [lastCallSignal, setLastCallSignal] = useState<{
-    type: string;
-    conversation_id: number;
-    sender_id?: number;
-    payload?: any;
-  } | null>(null);
+  const callSignalListenerRef = useRef<((signal: any) => void) | null>(null);
 
   // Request browser notification permission on mount
   useEffect(() => {
@@ -109,6 +104,7 @@ export const ChatPage: React.FC = () => {
         incomingOffer: data.payload,
         contactName: data.sender_name || 'Incoming Call',
       });
+      callSignalListenerRef.current?.(data);
       // Show system desktop notification if available
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
         try {
@@ -118,7 +114,7 @@ export const ChatPage: React.FC = () => {
         } catch (_) {}
       }
     } else if (data.type === 'call.answer' || data.type === 'call.ice-candidate' || data.type === 'call.end') {
-      setLastCallSignal(data);
+      callSignalListenerRef.current?.(data);
       if (data.type === 'call.end') {
         setTimeout(() => {
           setActiveCall((curr) => (curr && curr.conversationId === data.conversation_id ? null : curr));
@@ -888,11 +884,13 @@ export const ChatPage: React.FC = () => {
           callType={activeCall.callType}
           isIncoming={activeCall.isIncoming}
           incomingOffer={activeCall.incomingOffer}
-          incomingSignal={lastCallSignal}
           sendSignal={sendSignal}
+          onRegisterSignalListener={(listener) => {
+            callSignalListenerRef.current = listener;
+          }}
           onClose={() => {
+            callSignalListenerRef.current = null;
             setActiveCall(null);
-            setLastCallSignal(null);
           }}
         />
       )}
