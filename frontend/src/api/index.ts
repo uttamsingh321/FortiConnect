@@ -122,6 +122,24 @@ export const toggleReaction = (messageId: number, emoji: string) =>
 export const pinMessage = (conversationId: number, messageId: number) =>
   client.post<{ is_pinned: boolean; message: Message }>(`/conversations/${conversationId}/pin/${messageId}/`).then((r) => r.data);
 
+export const downloadAttachment = async (attachmentId: number, originalName: string) => {
+  const response = await client.get(`/attachments/${attachmentId}/download/`, {
+    responseType: 'blob',
+  });
+  const contentType = (response.headers['content-type'] as string) || 'application/octet-stream';
+  const blob = new Blob([response.data], {
+    type: contentType,
+  });
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = downloadUrl;
+  link.setAttribute('download', originalName);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(downloadUrl);
+};
+
 // ── Notifications ─────────────────────────────────────────────────────────
 export const getNotifications = (unreadOnly = false, beforeId?: number) =>
   client.get<{ results: Notification[]; unread_count: number }>('/notifications/', {

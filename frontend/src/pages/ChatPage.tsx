@@ -8,6 +8,7 @@ import {
   pinMessage,
   markConversationRead,
   deleteMessage,
+  downloadAttachment,
 } from '../api';
 import { useChatStore, useAuthStore } from '../store';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -30,6 +31,21 @@ export const ChatPage: React.FC = () => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [downloadingAttId, setDownloadingAttId] = useState<number | null>(null);
+
+  const handleDownloadAttachment = async (e: React.MouseEvent, att: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDownloadingAttId(att.id);
+    try {
+      await downloadAttachment(att.id, att.original_name);
+    } catch (err) {
+      console.error('Failed to download attachment', err);
+      alert('Unable to download attachment. Please ensure you are connected to the server.');
+    } finally {
+      setDownloadingAttId(null);
+    }
+  };
 
   // In-chat search state
   const [showSearch, setShowSearch] = useState(false);
@@ -606,26 +622,33 @@ export const ChatPage: React.FC = () => {
                         {/* Attachments Card */}
                         {msg.attachments && msg.attachments.length > 0 && (
                           <div style={styles.attachmentsList}>
-                            {msg.attachments.map((att) => (
-                              <a
-                                key={att.id}
-                                href={att.file_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={styles.attachmentCard}
-                              >
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                  <polyline points="14 2 14 8 20 8"></polyline>
-                                </svg>
-                                <div style={{ minWidth: 0, flex: 1 }}>
-                                  <div style={styles.attName}>{att.original_name}</div>
-                                  <div style={styles.attSize}>
-                                    {(att.file_size / 1024).toFixed(1)} KB • Download
+                            {msg.attachments.map((att) => {
+                              const isDownloading = downloadingAttId === att.id;
+                              return (
+                                <button
+                                  key={att.id}
+                                  type="button"
+                                  onClick={(e) => handleDownloadAttachment(e, att)}
+                                  style={styles.attachmentCard}
+                                  title={`Download ${att.original_name}`}
+                                  disabled={isDownloading}
+                                >
+                                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: '#38bdf8' }}>
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                  </svg>
+                                  <div style={{ minWidth: 0, flex: 1, textAlign: 'left' }}>
+                                    <div style={styles.attName}>{att.original_name}</div>
+                                    <div style={styles.attSize}>
+                                      {(att.file_size / 1024).toFixed(1)} KB • {isDownloading ? 'Downloading...' : 'Click to Download'}
+                                    </div>
                                   </div>
-                                </div>
-                              </a>
-                            ))}
+                                  <span style={{ fontSize: '0.85rem', marginLeft: '0.25rem', opacity: 0.85 }}>
+                                    {isDownloading ? '⏳' : '⬇️'}
+                                  </span>
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
 
@@ -1232,13 +1255,17 @@ const styles: Record<string, React.CSSProperties> = {
   attachmentCard: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.5rem',
-    padding: '0.4rem 0.6rem',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: '6px',
-    textDecoration: 'none',
+    gap: '0.55rem',
+    padding: '0.45rem 0.65rem',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    borderRadius: '8px',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
     color: '#f8fafc',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
+    cursor: 'pointer',
+    width: '100%',
+    textAlign: 'left',
+    font: 'inherit',
+    transition: 'background-color 0.15s ease, border-color 0.15s ease',
   },
   attName: {
     fontSize: '0.78rem',

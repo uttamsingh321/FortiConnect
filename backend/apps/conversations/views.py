@@ -683,11 +683,28 @@ class PinMessageView(APIView):
 class AttachmentDownloadView(APIView):
     """
     GET /api/attachments/{id}/download/ — safe authenticated attachment download
+    Supports both Authorization header and ?token=<jwt> query parameter.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = []
 
     def get(self, request, pk):
-        employee = _get_employee_or_403(request.user)
+        user = request.user
+        if not user or not user.is_authenticated:
+            token_str = request.query_params.get("token")
+            if token_str:
+                from rest_framework_simplejwt.tokens import AccessToken
+                from django.contrib.auth import get_user_model
+                try:
+                    valid_token = AccessToken(token_str)
+                    user_id = valid_token.get("user_id")
+                    User = get_user_model()
+                    user = User.objects.get(pk=user_id)
+                except Exception:
+                    return Response({"detail": "Invalid or expired token."}, status=401)
+            else:
+                return Response({"detail": "Authentication credentials were not provided."}, status=401)
+
+        employee = _get_employee_or_403(user)
         attachment = get_object_or_404(MessageAttachment, pk=pk)
 
         # Enforce conversation membership
@@ -706,7 +723,10 @@ class AttachmentDownloadView(APIView):
             attachment.file.open("rb"),
             content_type=attachment.content_type,
         )
-        response["Content-Disposition"] = f'inline; filename="{attachment.original_name}"'
+        as_attachment = request.query_params.get("inline") != "1"
+        disposition = "attachment" if as_attachment else "inline"
+        response["Content-Disposition"] = f'{disposition}; filename="{attachment.original_name}"'
+        response["Access-Control-Expose-Headers"] = "Content-Disposition, Content-Type, Content-Length"
         return response
 
 
