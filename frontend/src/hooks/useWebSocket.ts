@@ -16,13 +16,13 @@ export function useWebSocket(onMessageReceived?: (msg: WsMessage) => void) {
       return;
     }
 
-    let wsBaseUrl = import.meta.env.VITE_WS_URL;
+    let wsBaseUrl = typeof window !== 'undefined' ? localStorage.getItem('fc_custom_ws_url') || import.meta.env.VITE_WS_URL : import.meta.env.VITE_WS_URL;
     if (!wsBaseUrl) {
       if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         wsBaseUrl = `${protocol}//127.0.0.1:8000/ws/chat/`;
       } else {
-        wsBaseUrl = 'wss://idol-fingers-shots-sherman.trycloudflare.com/ws/chat/';
+        wsBaseUrl = 'wss://draft-vermont-totals-distinction.trycloudflare.com/ws/chat/';
       }
     }
     const wsUrl = `${wsBaseUrl}${wsBaseUrl.includes('?') ? '&' : '?'}token=${token}`;

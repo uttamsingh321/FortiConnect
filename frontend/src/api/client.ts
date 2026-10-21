@@ -7,13 +7,16 @@
 import axios, { AxiosError, type AxiosInstance } from 'axios';
 
 const getBaseUrl = () => {
+  if (typeof window !== 'undefined' && localStorage.getItem('fc_custom_api_url')) {
+    return localStorage.getItem('fc_custom_api_url')!;
+  }
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
   if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
     return 'http://127.0.0.1:8000/api';
   }
-  return 'https://idol-fingers-shots-sherman.trycloudflare.com/api';
+  return 'https://draft-vermont-totals-distinction.trycloudflare.com/api';
 };
 
 const BASE_URL = getBaseUrl();
