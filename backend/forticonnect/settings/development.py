@@ -64,12 +64,26 @@ except Exception:
         }
     }
 
-# Development: allow localhost
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0"]
+# Development / Public Gateway: allow all hosts and origins for testing
+ALLOWED_HOSTS = ["*"]
 
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https:\/\/.*\.vercel\.app$",
+    r"^https:\/\/.*\.trycloudflare\.com$",
+    r"^https:\/\/.*\.loca\.lt$",
+]
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://frontend-seven-kappa-18.vercel.app",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://*.vercel.app",
+    "https://*.trycloudflare.com",
+    "https://*.loca.lt",
 ]
 
 # Development: allow WebSocket connections from Vite dev server

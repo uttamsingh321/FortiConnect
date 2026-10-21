@@ -6,7 +6,17 @@
  */
 import axios, { AxiosError, type AxiosInstance } from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const getBaseUrl = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return 'http://127.0.0.1:8000/api';
+  }
+  return 'https://idol-fingers-shots-sherman.trycloudflare.com/api';
+};
+
+const BASE_URL = getBaseUrl();
 
 // Token storage — uses memory + localStorage for persistence
 let accessToken: string | null = localStorage.getItem('fc_access_token');

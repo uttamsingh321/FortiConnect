@@ -16,14 +16,16 @@ export function useWebSocket(onMessageReceived?: (msg: WsMessage) => void) {
       return;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const defaultWsHost =
-      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? '127.0.0.1:8000'
-        : window.location.host;
-    const wsUrl = import.meta.env.VITE_WS_URL
-      ? `${import.meta.env.VITE_WS_URL}${import.meta.env.VITE_WS_URL.includes('?') ? '&' : '?'}token=${token}`
-      : `${protocol}//${defaultWsHost}/ws/chat/?token=${token}`;
+    let wsBaseUrl = import.meta.env.VITE_WS_URL;
+    if (!wsBaseUrl) {
+      if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsBaseUrl = `${protocol}//127.0.0.1:8000/ws/chat/`;
+      } else {
+        wsBaseUrl = 'wss://idol-fingers-shots-sherman.trycloudflare.com/ws/chat/';
+      }
+    }
+    const wsUrl = `${wsBaseUrl}${wsBaseUrl.includes('?') ? '&' : '?'}token=${token}`;
 
     try {
       const ws = new WebSocket(wsUrl);
