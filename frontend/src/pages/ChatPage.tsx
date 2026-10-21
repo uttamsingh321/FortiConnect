@@ -4,6 +4,8 @@ import { getConversations, getMessages, sendMessage, createGroupConversation } f
 import { useChatStore, useAuthStore } from '../store';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { CallModal } from '../components/CallModal';
+import data from '@emoji-mart/data';
+import Picker from '@emoji-mart/react';
 
 export const ChatPage: React.FC = () => {
   const user = useAuthStore((state) => state.user);
@@ -16,13 +18,6 @@ export const ChatPage: React.FC = () => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Common quick emojis
-  const COMMON_EMOJIS = ['👍', '👋', '🎉', '🔥', '❤️', '😊', '🚀', '✅', '🙏', '💯', '👏', '🎯', '👀', '💡', '✨'];
-
-  const addEmoji = (emoji: string) => {
-    setInputMessage((prev) => prev + emoji);
-  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -289,31 +284,21 @@ export const ChatPage: React.FC = () => {
 
             {/* Message Composer Area */}
             <div style={styles.composerWrapper}>
-              {/* Emoji Picker Popup */}
+              {/* Comprehensive Full Emoji Mart Picker Popup */}
               {showEmojiPicker && (
                 <div style={styles.emojiPicker}>
-                  <div style={styles.emojiPickerHeader}>
-                    <span>Quick Emojis</span>
-                    <button
-                      type="button"
-                      onClick={() => setShowEmojiPicker(false)}
-                      style={styles.closeEmojiBtn}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div style={styles.emojiGrid}>
-                    {COMMON_EMOJIS.map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        onClick={() => addEmoji(emoji)}
-                        style={styles.emojiBtn}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
+                  <Picker
+                    data={data}
+                    onEmojiSelect={(emoji: any) => {
+                      if (emoji.native) {
+                        setInputMessage((prev) => prev + emoji.native);
+                      }
+                    }}
+                    theme="dark"
+                    previewPosition="none"
+                    skinTonePosition="search"
+                    autoFocus={true}
+                  />
                 </div>
               )}
 
@@ -615,15 +600,12 @@ const styles: Record<string, React.CSSProperties> = {
   emojiPicker: {
     position: 'absolute',
     bottom: '100%',
-    left: '1.5rem',
-    marginBottom: '8px',
-    backgroundColor: '#1e293b',
-    border: '1px solid #475569',
-    borderRadius: '12px',
-    padding: '0.875rem',
-    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.6)',
-    width: '280px',
-    zIndex: 100,
+    left: '1rem',
+    marginBottom: '10px',
+    boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.7)',
+    borderRadius: '16px',
+    overflow: 'hidden',
+    zIndex: 1000,
   },
   emojiPickerHeader: {
     display: 'flex',
