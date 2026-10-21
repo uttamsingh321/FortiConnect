@@ -1,0 +1,36 @@
+# FortiConnect Backend Dependencies
+# Python 3.14+ / Django 6.1
+
+# Core framework
+Django==6.1
+djangorestframework==3.18.0
+djangorestframework-simplejwt==5.5.1
+django-cors-headers==4.9.0
+django-environ==0.14.0
+
+# Database
+psycopg[binary]==3.3.6
+
+# Real-time / WebSockets
+channels==4.2.0
+channels-redis==4.2.0
+daphne==4.1.2
+
+# Redis client
+redis==5.2.1
+
+# Rate limiting
+django-ratelimit==4.1.0
+
+# Admin UI
+django-jazzmin==3.0.5
+
+# Scheduling (HR sync stubs)
+django-apscheduler==0.7.0
+
+# Logging
+structlog==26.1.0
+
+# Utilities
+python-dotenv==1.2.3
+
