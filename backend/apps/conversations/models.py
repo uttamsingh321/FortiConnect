@@ -1,10 +1,12 @@
 """
-FortiConnect — Conversation and Message Models
+FortiConnect — Conversation, Message, Reaction, and Attachment Models
 
 Schema design:
-- Conversation: either a DIRECT (2-person) or GROUP type
-- ConversationMembership: explicit many-to-many with roles for groups
-- Message: durable, stored in PostgreSQL (WebSocket delivery is supplemental)
+- Conversation: either a DIRECT (2-person) or GROUP type with optional avatar
+- ConversationMembership: explicit many-to-many with roles for groups, unread pointer, and mute
+- Message: durable, stored in PostgreSQL with reply_to threading, pinning, and idempotency
+- MessageReaction: emoji reactions with unique employee/message/emoji constraint
+- MessageAttachment: secure file attachments with authenticated access
 - PresenceRecord: ephemeral online/offline status, stored short-term in DB
   (Redis is the primary store; DB is a fallback/audit trail)
 
@@ -54,6 +56,12 @@ class Conversation(models.Model):
         help_text="Required for group conversations.",
     )
     description = models.TextField(max_length=500, blank=True, default="")
+    avatar = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Custom avatar identifier or image URL.",
+    )
 
     created_by = models.ForeignKey(
         Employee,
@@ -113,6 +121,10 @@ class ConversationMembership(models.Model):
     # Soft-removal: removed members retain historical records
     removed_at = models.DateTimeField(null=True, blank=True)
 
+    # Unread and notification preferences
+    last_read_message_id = models.IntegerField(default=0, db_index=True)
+    is_muted = models.BooleanField(default=False)
+
     class Meta:
         unique_together = [("conversation", "employee")]
         indexes = [
@@ -152,6 +164,29 @@ class Message(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     edited_at = models.DateTimeField(null=True, blank=True)
 
+    # Threading / Reply support
+    reply_to = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="replies",
+    )
+
+    # Pinning support
+    is_pinned = models.BooleanField(default=False, db_index=True)
+    pinned_at = models.DateTimeField(null=True, blank=True)
+    pinned_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pinned_messages",
+    )
+
+    # Deduplication and retry idempotency
+    idempotency_key = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+
     # Soft-delete: deleted messages show a placeholder, not the content
     deleted_at = models.DateTimeField(null=True, blank=True)
 
@@ -160,6 +195,7 @@ class Message(models.Model):
         indexes = [
             models.Index(fields=["conversation", "created_at"]),
             models.Index(fields=["author", "created_at"]),
+            models.Index(fields=["conversation", "is_pinned"]),
         ]
         verbose_name = "Message"
         verbose_name_plural = "Messages"
@@ -170,6 +206,63 @@ class Message(models.Model):
     @property
     def is_deleted(self) -> bool:
         return self.deleted_at is not None
+
+
+class MessageReaction(models.Model):
+    """
+    Emoji reaction to a message by an employee.
+    Enforces uniqueness so a user cannot duplicate reactions to the same message.
+    """
+
+    message = models.ForeignKey(
+        Message,
+        on_delete=models.CASCADE,
+        related_name="reactions",
+    )
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="message_reactions",
+    )
+    emoji = models.CharField(max_length=16, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("message", "employee", "emoji")]
+        indexes = [
+            models.Index(fields=["message", "emoji"]),
+        ]
+        verbose_name = "Message Reaction"
+        verbose_name_plural = "Message Reactions"
+
+    def __str__(self):
+        return f"{self.employee} reacted {self.emoji} on #{self.message_id}"
+
+
+class MessageAttachment(models.Model):
+    """
+    Authorized file attachment linked to a message.
+    Served via authenticated endpoint to ensure security checks.
+    """
+
+    message = models.ForeignKey(
+        Message,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    file = models.FileField(upload_to="attachments/%Y/%m/%d/")
+    original_name = models.CharField(max_length=255)
+    file_size = models.BigIntegerField(default=0)
+    content_type = models.CharField(max_length=100, default="application/octet-stream")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        verbose_name = "Message Attachment"
+        verbose_name_plural = "Message Attachments"
+
+    def __str__(self):
+        return f"Attachment {self.original_name} on #{self.message_id}"
 
 
 class PresenceRecord(models.Model):
@@ -196,4 +289,3 @@ class PresenceRecord(models.Model):
 
     def __str__(self):
         return f"{self.employee} — {self.status}"
-

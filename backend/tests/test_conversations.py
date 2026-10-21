@@ -241,3 +241,129 @@ class TestMessageEditDelete:
         del_response = alice_client.delete(f"/api/messages/{msg_id}/")
         assert del_response.status_code == 204
 
+
+@pytest.mark.django_db
+class TestPhase2GroupFeatures:
+
+    def test_toggle_emoji_reaction(self, alice_client, direct_conversation):
+        msg_response = alice_client.post(
+            f"/api/conversations/{direct_conversation.pk}/messages/",
+            {"content": "React to me!"},
+        )
+        msg_id = msg_response.data["id"]
+
+        # Add reaction
+        react_res = alice_client.post(f"/api/messages/{msg_id}/reactions/", {"emoji": "🔥"})
+        assert react_res.status_code == 200
+        assert react_res.data["action"] == "added"
+        assert len(react_res.data["reactions"]) == 1
+        assert react_res.data["reactions"][0]["emoji"] == "🔥"
+        assert react_res.data["reactions"][0]["count"] == 1
+        assert react_res.data["reactions"][0]["has_reacted"] is True
+
+        # Toggle off
+        toggle_res = alice_client.post(f"/api/messages/{msg_id}/reactions/", {"emoji": "🔥"})
+        assert toggle_res.status_code == 200
+        assert toggle_res.data["action"] == "removed"
+        assert len(toggle_res.data["reactions"]) == 0
+
+    def test_reply_to_message(self, alice_client, bob_client, direct_conversation):
+        msg_response = alice_client.post(
+            f"/api/conversations/{direct_conversation.pk}/messages/",
+            {"content": "Hello Bob"},
+        )
+        parent_id = msg_response.data["id"]
+
+        reply_response = bob_client.post(
+            f"/api/conversations/{direct_conversation.pk}/messages/",
+            {"content": "Hey Alice, received!", "reply_to_id": parent_id},
+        )
+        assert reply_response.status_code == 201
+        assert reply_response.data["reply_to"] is not None
+        assert reply_response.data["reply_to"]["id"] == parent_id
+        assert reply_response.data["reply_to"]["content"] == "Hello Bob"
+
+    def test_pin_and_unpin_message(self, alice_client, bob_client, group_conversation):
+        msg_response = alice_client.post(
+            f"/api/conversations/{group_conversation.pk}/messages/",
+            {"content": "Important channel announcement"},
+        )
+        msg_id = msg_response.data["id"]
+
+        # Bob (member) cannot pin
+        bob_pin = bob_client.post(f"/api/conversations/{group_conversation.pk}/pin/{msg_id}/")
+        assert bob_pin.status_code == 403
+
+        # Alice (owner) can pin
+        alice_pin = alice_client.post(f"/api/conversations/{group_conversation.pk}/pin/{msg_id}/")
+        assert alice_pin.status_code == 200
+        assert alice_pin.data["is_pinned"] is True
+
+        # Verify message list filters pinned only
+        pinned_list = alice_client.get(f"/api/conversations/{group_conversation.pk}/messages/?pinned_only=true")
+        assert pinned_list.status_code == 200
+        assert len(pinned_list.data) == 1
+
+        # Unpin
+        alice_unpin = alice_client.post(f"/api/conversations/{group_conversation.pk}/pin/{msg_id}/")
+        assert alice_unpin.status_code == 200
+        assert alice_unpin.data["is_pinned"] is False
+
+    def test_transfer_group_ownership(self, alice_client, bob_client, bob, group_conversation):
+        _, bob_emp = bob
+        transfer_res = alice_client.post(
+            f"/api/conversations/{group_conversation.pk}/transfer-ownership/",
+            {"new_owner_id": bob_emp.pk},
+        )
+        assert transfer_res.status_code == 200
+
+        # Verify Bob is now OWNER and Alice is ADMIN
+        members_res = bob_client.get(f"/api/conversations/{group_conversation.pk}/members/")
+        bob_m = next(m for m in members_res.data if m["employee"]["id"] == bob_emp.pk)
+        alice_m = next(m for m in members_res.data if m["employee"]["display_name"] == "Alice Chen")
+        assert bob_m["role"] == "owner"
+        assert alice_m["role"] == "admin"
+
+    def test_message_search(self, alice_client, group_conversation):
+        alice_client.post(
+            f"/api/conversations/{group_conversation.pk}/messages/",
+            {"content": "Deployment planned for Friday"},
+        )
+        alice_client.post(
+            f"/api/conversations/{group_conversation.pk}/messages/",
+            {"content": "Lunch at noon"},
+        )
+
+        search_res = alice_client.get(f"/api/conversations/{group_conversation.pk}/messages/?q=deployment")
+        assert search_res.status_code == 200
+        assert len(search_res.data) == 1
+        assert "Deployment" in search_res.data[0]["content"]
+
+    def test_idempotent_message_send(self, alice_client, direct_conversation):
+        key = "idemp-test-uuid-12345"
+        first = alice_client.post(
+            f"/api/conversations/{direct_conversation.pk}/messages/",
+            {"content": "Idempotent payload", "idempotency_key": key},
+        )
+        assert first.status_code == 201
+
+        # Repeat send with identical idempotency key returns original message without duplicating
+        second = alice_client.post(
+            f"/api/conversations/{direct_conversation.pk}/messages/",
+            {"content": "Idempotent payload", "idempotency_key": key},
+        )
+        assert second.status_code == 200
+        assert second.data["id"] == first.data["id"]
+
+    def test_mark_conversation_read(self, alice_client, bob_client, direct_conversation):
+        # Alice sends message
+        msg = alice_client.post(
+            f"/api/conversations/{direct_conversation.pk}/messages/",
+            {"content": "Unread message for Bob"},
+        )
+        # Bob marks conversation as read
+        read_res = bob_client.post(f"/api/conversations/{direct_conversation.pk}/read/")
+        assert read_res.status_code == 200
+        assert read_res.data["unread_count"] == 0
+
+

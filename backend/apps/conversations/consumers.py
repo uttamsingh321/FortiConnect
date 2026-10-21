@@ -212,6 +212,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "message": event["message"],
         }))
 
+    async def message_reaction(self, event):
+        """Deliver reaction updates for a message."""
+        await self.send(json.dumps({
+            "type": "message.reaction",
+            "message_id": event["message_id"],
+            "conversation_id": event["conversation_id"],
+            "reactions": event["reactions"],
+        }))
+
+    async def conversation_updated(self, event):
+        """Deliver conversation metadata updates (title, avatar, membership)."""
+        await self.send(json.dumps({
+            "type": "conversation.updated",
+            "conversation": event["conversation"],
+        }))
+
     async def chat_typing(self, event):
         """Forward a typing indicator to this client."""
         await self.send(json.dumps({

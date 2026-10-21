@@ -34,6 +34,8 @@ export interface Membership {
   role: 'owner' | 'admin' | 'member';
   joined_at: string;
   removed_at: string | null;
+  last_read_message_id?: number;
+  is_muted?: boolean;
 }
 
 export interface LastMessage {
@@ -48,12 +50,39 @@ export interface Conversation {
   type: 'direct' | 'group';
   name: string;
   description: string;
+  avatar?: string;
+  created_by?: number | null;
   created_at: string;
   updated_at: string;
   is_archived: boolean;
   memberships: Membership[];
   last_message: LastMessage | null;
   unread_count: number;
+  pinned_count?: number;
+}
+
+export interface MessageReactionGroup {
+  emoji: string;
+  count: number;
+  users: string[];
+  user_ids: number[];
+  has_reacted: boolean;
+}
+
+export interface MessageAttachment {
+  id: number;
+  original_name: string;
+  file_size: number;
+  content_type: string;
+  created_at: string;
+  file_url: string;
+}
+
+export interface ReplyPreview {
+  id: number;
+  author_name: string;
+  content: string;
+  is_deleted: boolean;
 }
 
 export interface Message {
@@ -64,6 +93,12 @@ export interface Message {
   created_at: string;
   edited_at: string | null;
   is_deleted: boolean;
+  reply_to?: ReplyPreview | null;
+  reactions?: MessageReactionGroup[];
+  attachments?: MessageAttachment[];
+  is_pinned?: boolean;
+  pinned_at?: string | null;
+  pinned_by?: EmployeeListItem | null;
 }
 
 export interface Notification {
@@ -92,10 +127,14 @@ export type WsMessage =
   | { type: 'connection.established'; employee_id: number }
   | { type: 'subscribed'; conversation_id: number }
   | { type: 'message.new'; message: Message }
+  | { type: 'message.reaction'; message_id: number; conversation_id: number; reactions: MessageReactionGroup[] }
+  | { type: 'conversation.updated'; conversation: Conversation }
   | { type: 'presence.update'; employee_id: number; status: string }
   | { type: 'notification.new'; notification: Notification }
-  | { type: 'typing.start'; employee_id: number; display_name: string; conversation_id: number; is_typing: true }
-  | { type: 'typing.stop'; employee_id: number; display_name: string; conversation_id: number; is_typing: false }
+  | { type: 'chat.typing'; employee_id: number; display_name: string; conversation_id: number; is_typing: boolean }
   | { type: 'heartbeat.ack' }
-  | { type: 'error'; code: string; message: string };
-
+  | { type: 'error'; code: string; message: string }
+  | { type: 'call.offer'; sender_id: number; sender_name: string; payload: any; call_type: 'voice' | 'video'; conversation_id: number }
+  | { type: 'call.answer'; sender_id: number; sender_name: string; payload: any; conversation_id: number }
+  | { type: 'call.ice-candidate'; sender_id: number; payload: any; conversation_id: number }
+  | { type: 'call.end'; sender_id: number; conversation_id: number };
