@@ -52,6 +52,7 @@ export const ChatPage: React.FC = () => {
   } | null>(null);
 
   const callSignalListenerRef = useRef<((signal: any) => void) | null>(null);
+  const queuedCallSignalsRef = useRef<any[]>([]);
 
   // Request browser notification permission on mount
   useEffect(() => {
@@ -104,7 +105,11 @@ export const ChatPage: React.FC = () => {
         incomingOffer: data.payload,
         contactName: data.sender_name || 'Incoming Call',
       });
-      callSignalListenerRef.current?.(data);
+      if (callSignalListenerRef.current) {
+        callSignalListenerRef.current(data);
+      } else {
+        queuedCallSignalsRef.current.push(data);
+      }
       // Show system desktop notification if available
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
         try {
@@ -114,7 +119,11 @@ export const ChatPage: React.FC = () => {
         } catch (_) {}
       }
     } else if (data.type === 'call.answer' || data.type === 'call.ice-candidate' || data.type === 'call.end') {
-      callSignalListenerRef.current?.(data);
+      if (callSignalListenerRef.current) {
+        callSignalListenerRef.current(data);
+      } else {
+        queuedCallSignalsRef.current.push(data);
+      }
       if (data.type === 'call.end') {
         setTimeout(() => {
           setActiveCall((curr) => (curr && curr.conversationId === data.conversation_id ? null : curr));
@@ -887,9 +896,14 @@ export const ChatPage: React.FC = () => {
           sendSignal={sendSignal}
           onRegisterSignalListener={(listener) => {
             callSignalListenerRef.current = listener;
+            while (queuedCallSignalsRef.current.length > 0) {
+              const sig = queuedCallSignalsRef.current.shift();
+              if (sig) listener(sig);
+            }
           }}
           onClose={() => {
             callSignalListenerRef.current = null;
+            queuedCallSignalsRef.current = [];
             setActiveCall(null);
           }}
         />

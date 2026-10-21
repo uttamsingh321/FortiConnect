@@ -43,7 +43,6 @@ class RingtonePlayer {
         const osc2 = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
 
-        // 440Hz + 480Hz dual frequency
         osc1.type = 'sine';
         osc2.type = 'sine';
         osc1.frequency.setValueAtTime(440, now);
@@ -84,6 +83,99 @@ class RingtonePlayer {
   }
 }
 
+// Generate live media stream, with an active animated canvas video fallback if camera is busy or unavailable
+async function getMediaStreamWithFallback(
+  callType: 'voice' | 'video',
+  userName: string
+): Promise<{ stream: MediaStream; notice: string | null }> {
+  // 1. Try real physical camera/microphone
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: callType === 'video' ? { width: { ideal: 640 }, height: { ideal: 480 } } : false,
+    });
+    return { stream: s, notice: null };
+  } catch (err1) {
+    console.warn('Direct camera/mic access failed or busy, trying audio-only first:', err1);
+  }
+
+  // 2. Try audio-only if video failed
+  let audioTrack: MediaStreamTrack | null = null;
+  try {
+    const a = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    audioTrack = a.getAudioTracks()[0] || null;
+  } catch (_) {}
+
+  // 3. For video calls where webcam was busy (e.g. 2 tabs testing on 1 computer), generate active animated canvas video
+  if (callType === 'video') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;
+    const ctx = canvas.getContext('2d');
+    let frame = 0;
+
+    const renderAnim = () => {
+      if (!ctx) return;
+      frame++;
+      // Background gradient
+      const grad = ctx.createLinearGradient(0, 0, 640, 480);
+      grad.addColorStop(0, '#0f172a');
+      grad.addColorStop(1, '#0284c7');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 640, 480);
+
+      // Pulsing circle
+      const r = 60 + Math.sin(frame * 0.1) * 8;
+      ctx.beginPath();
+      ctx.arc(320, 210, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fill();
+
+      // Avatar letter
+      ctx.font = 'bold 54px system-ui, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText((userName || 'U').charAt(0).toUpperCase(), 320, 210);
+
+      // Label
+      ctx.font = 'bold 22px system-ui, sans-serif';
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillText(userName || 'FortiConnect Video', 320, 310);
+
+      ctx.font = '14px system-ui, sans-serif';
+      ctx.fillStyle = '#bae6fd';
+      ctx.fillText('Live WebRTC Video Stream', 320, 340);
+    };
+
+    renderAnim();
+    const timer = setInterval(renderAnim, 50);
+
+    const canvasStream = (canvas as any).captureStream ? (canvas as any).captureStream(20) : new MediaStream();
+    canvasStream.getVideoTracks().forEach((track: any) => {
+      const origStop = track.stop ? track.stop.bind(track) : () => {};
+      track.stop = () => {
+        clearInterval(timer);
+        origStop();
+      };
+    });
+
+    if (audioTrack) {
+      canvasStream.addTrack(audioTrack);
+    }
+
+    return {
+      stream: canvasStream,
+      notice: 'Camera in use or unavailable. Streaming live animated video avatar.',
+    };
+  }
+
+  // 4. Voice call without mic
+  const stream = new MediaStream();
+  if (audioTrack) stream.addTrack(audioTrack);
+  return { stream, notice: audioTrack ? null : 'No microphone detected' };
+}
+
 export const CallModal: React.FC<CallModalProps> = ({
   conversationId,
   contactName,
@@ -99,28 +191,34 @@ export const CallModal: React.FC<CallModalProps> = ({
   const [isVideoOff, setIsVideoOff] = useState(callType === 'voice');
   const [callDuration, setCallDuration] = useState(0);
   const [mediaNotice, setMediaNotice] = useState<string | null>(null);
-
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
 
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const pendingIceCandidatesRef = useRef<any[]>([]);
   const ringtoneRef = useRef<RingtonePlayer>(new RingtonePlayer());
+  const isCleanedUpRef = useRef<boolean>(false);
 
+  // Pure cleanup method
   const cleanup = useCallback(() => {
+    if (isCleanedUpRef.current) return;
+    isCleanedUpRef.current = true;
     ringtoneRef.current.stop();
-    if (localStream) {
-      localStream.getTracks().forEach((t) => t.stop());
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
     }
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
-  }, [localStream]);
+  }, []);
 
   // Ringtone playback lifecycle
   useEffect(() => {
@@ -134,21 +232,21 @@ export const CallModal: React.FC<CallModalProps> = ({
     };
   }, [callStatus, isIncoming]);
 
-  // Helper: Flush queued ICE candidates after remote description is set
+  // Flush queued candidates once remote description is set
   const drainPendingIceCandidates = async (pc: RTCPeerConnection) => {
     while (pendingIceCandidatesRef.current.length > 0) {
-      const candidateData = pendingIceCandidatesRef.current.shift();
-      if (candidateData) {
+      const candData = pendingIceCandidatesRef.current.shift();
+      if (candData) {
         try {
-          await pc.addIceCandidate(new RTCIceCandidate(candidateData));
+          await pc.addIceCandidate(new RTCIceCandidate(candData));
         } catch (err) {
-          console.warn('Failed to add queued ICE candidate', err);
+          console.warn('[WebRTC] Failed to add queued ICE candidate', err);
         }
       }
     }
   };
 
-  // Direct synchronous signal handler
+  // Synchronous WebRTC signal handler
   const handleIncomingSignal = useCallback(
     async (signal: any) => {
       if (!signal || signal.conversation_id !== conversationId) return;
@@ -156,13 +254,13 @@ export const CallModal: React.FC<CallModalProps> = ({
       const pc = peerConnectionRef.current;
 
       if (signal.type === 'call.answer') {
-        if (pc && pc.signalingState === 'have-local-offer') {
+        if (pc && (pc.signalingState === 'have-local-offer' || pc.signalingState === 'stable')) {
           try {
             await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
             await drainPendingIceCandidates(pc);
             setCallStatus('connected');
           } catch (err) {
-            console.error('Failed to set remote answer on caller', err);
+            console.error('[WebRTC] Failed to set remote answer description:', err);
           }
         }
       } else if (signal.type === 'call.ice-candidate') {
@@ -175,7 +273,7 @@ export const CallModal: React.FC<CallModalProps> = ({
           try {
             await pc.addIceCandidate(new RTCIceCandidate(candData));
           } catch (err) {
-            console.warn('Failed to add incoming ICE candidate', err);
+            console.warn('[WebRTC] Error adding ICE candidate:', err);
           }
         }
       } else if (signal.type === 'call.end') {
@@ -194,89 +292,99 @@ export const CallModal: React.FC<CallModalProps> = ({
     }
   }, [onRegisterSignalListener, handleIncomingSignal]);
 
-  // Attach local stream to video element
+  // Guarantee srcObject is bound and playing on every render pass
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
-      localVideoRef.current.play().catch(() => {});
-    }
-  }, [localStream]);
-
-  // Attach remote stream to video & audio elements
-  useEffect(() => {
-    if (remoteStream) {
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream;
-        remoteVideoRef.current.play().catch((e) => console.warn('Remote video playback error', e));
-      }
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = remoteStream;
-        remoteAudioRef.current.play().catch((e) => console.warn('Remote audio playback error', e));
+    if (localStreamRef.current && localVideoRef.current) {
+      if (localVideoRef.current.srcObject !== localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+        localVideoRef.current.play().catch(() => {});
       }
     }
-  }, [remoteStream, callStatus]);
+    if (remoteStreamRef.current) {
+      if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStreamRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+        remoteVideoRef.current.play().catch(() => {});
+      }
+      if (remoteAudioRef.current && remoteAudioRef.current.srcObject !== remoteStreamRef.current) {
+        remoteAudioRef.current.srcObject = remoteStreamRef.current;
+        remoteAudioRef.current.play().catch(() => {});
+      }
+    }
+  });
 
-  // Initialize WebRTC Peer Connection and Local Media
+  // Setup WebRTC connection once on mount
   useEffect(() => {
     let active = true;
 
     const setupConnection = async () => {
       try {
-        let stream: MediaStream;
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
-            video: callType === 'video',
-          });
-        } catch (e1) {
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-            setMediaNotice('Camera unavailable, joined with microphone audio');
-          } catch (e2) {
-            console.warn('No physical media devices available, using empty MediaStream', e2);
-            stream = new MediaStream();
-            setMediaNotice('Simulated media connection (no camera/mic detected)');
-          }
-        }
-
+        const { stream, notice } = await getMediaStreamWithFallback(callType, 'You');
         if (!active) {
-          stream.getTracks().forEach((track) => track.stop());
+          stream.getTracks().forEach((t) => t.stop());
           return;
         }
 
-        setLocalStream(stream);
+        localStreamRef.current = stream;
+        if (notice) setMediaNotice(notice);
+
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+          localVideoRef.current.play().catch(() => {});
+        }
 
         const pc = new RTCPeerConnection(ICE_SERVERS);
         peerConnectionRef.current = pc;
 
-        // Add tracks to PeerConnection
+        // Add local tracks to peer connection
         stream.getTracks().forEach((track) => {
           pc.addTrack(track, stream);
         });
 
-        // Remote track handler
+        // Remote track arrival
         pc.ontrack = (event) => {
           console.log('[WebRTC] Received remote track:', event.track.kind);
           let rStream = event.streams && event.streams[0];
           if (!rStream) {
-            rStream = new MediaStream([event.track]);
+            if (!remoteStreamRef.current) {
+              remoteStreamRef.current = new MediaStream();
+            }
+            remoteStreamRef.current.addTrack(event.track);
+            rStream = remoteStreamRef.current;
+          } else {
+            remoteStreamRef.current = rStream;
           }
-          setRemoteStream(rStream);
+
+          if (event.track.kind === 'video') {
+            setHasRemoteVideo(true);
+          }
           setCallStatus('connected');
+
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = rStream;
+            remoteVideoRef.current.play().catch(() => {});
+          }
+          if (remoteAudioRef.current) {
+            remoteAudioRef.current.srcObject = rStream;
+            remoteAudioRef.current.play().catch(() => {});
+          }
         };
 
-        // ICE candidate handler
+        // ICE candidate handler — serialize as explicit plain JSON object
         pc.onicecandidate = (event) => {
           if (event.candidate) {
             sendSignal({
               type: 'call.ice-candidate',
               conversation_id: conversationId,
-              payload: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate,
+              payload: {
+                candidate: event.candidate.candidate,
+                sdpMid: event.candidate.sdpMid,
+                sdpMLineIndex: event.candidate.sdpMLineIndex,
+                usernameFragment: event.candidate.usernameFragment,
+              },
             });
           }
         };
 
-        // Connection state tracking
         pc.onconnectionstatechange = () => {
           console.log('[WebRTC] Connection state:', pc.connectionState);
           if (pc.connectionState === 'connected') {
@@ -293,17 +401,23 @@ export const CallModal: React.FC<CallModalProps> = ({
 
         // Caller initiates offer
         if (!isIncoming) {
-          const offer = await pc.createOffer();
+          const offer = await pc.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: callType === 'video',
+          });
           await pc.setLocalDescription(offer);
           sendSignal({
             type: 'call.offer',
             conversation_id: conversationId,
             call_type: callType,
-            payload: offer,
+            payload: {
+              type: offer.type,
+              sdp: offer.sdp,
+            },
           });
         }
       } catch (err) {
-        console.error('[WebRTC] Setup failed', err);
+        console.error('[WebRTC] Setup failed:', err);
       }
     };
 
@@ -313,7 +427,8 @@ export const CallModal: React.FC<CallModalProps> = ({
       active = false;
       cleanup();
     };
-  }, [callType, conversationId, isIncoming, sendSignal, cleanup]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Callee accepts incoming call
   const handleAcceptCall = async () => {
@@ -330,12 +445,15 @@ export const CallModal: React.FC<CallModalProps> = ({
       sendSignal({
         type: 'call.answer',
         conversation_id: conversationId,
-        payload: answer,
+        payload: {
+          type: answer.type,
+          sdp: answer.sdp,
+        },
       });
 
       setCallStatus('connected');
     } catch (err) {
-      console.error('[WebRTC] Failed to answer call', err);
+      console.error('[WebRTC] Failed to answer call:', err);
     }
   };
 
@@ -351,8 +469,8 @@ export const CallModal: React.FC<CallModalProps> = ({
 
   // Toggle Mute
   const toggleMute = () => {
-    if (localStream) {
-      localStream.getAudioTracks().forEach((track) => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((track) => {
         track.enabled = !track.enabled;
       });
       setIsMuted(!isMuted);
@@ -361,8 +479,8 @@ export const CallModal: React.FC<CallModalProps> = ({
 
   // Toggle Camera
   const toggleVideo = () => {
-    if (localStream) {
-      localStream.getVideoTracks().forEach((track) => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getVideoTracks().forEach((track) => {
         track.enabled = !track.enabled;
       });
       setIsVideoOff(!isVideoOff);
@@ -386,7 +504,7 @@ export const CallModal: React.FC<CallModalProps> = ({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const isVideoAvailable = callType === 'video' && remoteStream && remoteStream.getVideoTracks().length > 0;
+  const showVideoPlayer = callType === 'video' && hasRemoteVideo && callStatus === 'connected';
 
   return (
     <div style={styles.modalOverlay}>
@@ -434,12 +552,12 @@ export const CallModal: React.FC<CallModalProps> = ({
             playsInline
             style={{
               ...styles.remoteVideo,
-              display: isVideoAvailable && callStatus === 'connected' ? 'block' : 'none',
+              display: showVideoPlayer ? 'block' : 'none',
             }}
           />
 
           {/* Voice / Connecting Placeholder */}
-          {(!isVideoAvailable || callStatus !== 'connected') && (
+          {!showVideoPlayer && (
             <div style={styles.voicePlaceholder}>
               <div
                 style={{
@@ -459,7 +577,7 @@ export const CallModal: React.FC<CallModalProps> = ({
                     : 'Ringing employee devices...'
                   : callStatus === 'connected'
                   ? callType === 'video'
-                    ? 'Connecting video stream...'
+                    ? 'Negotiating video stream...'
                     : 'Voice Call Connected'
                   : 'Call Ended'}
               </p>

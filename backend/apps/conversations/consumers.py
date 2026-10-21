@@ -192,6 +192,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 return
 
         # Broadcast signal to other members in this conversation
+        logger.info(
+            "ws_call_signal_broadcast",
+            sig_type=data.get("type"),
+            sender_id=self.employee.pk,
+            conv_id=conversation_id,
+        )
         await self.channel_layer.group_send(
             group_name,
             {
