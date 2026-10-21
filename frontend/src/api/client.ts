@@ -6,7 +6,7 @@
  */
 import axios, { AxiosError, type AxiosInstance } from 'axios';
 
-const BASE_URL = '/api';
+const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Token storage — uses memory + localStorage for persistence
 let accessToken: string | null = localStorage.getItem('fc_access_token');

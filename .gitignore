@@ -51,6 +51,7 @@ Thumbs.db
 # Database
 *.sqlite3
 *.db
+.vercel/
 
 # Agent skills & customizations (strictly untracked)
 .agents/

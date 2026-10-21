@@ -17,8 +17,13 @@ export function useWebSocket(onMessageReceived?: (msg: WsMessage) => void) {
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Connect directly to backend port 8000 in dev if not using proxy for ws
-    const wsUrl = `${protocol}//127.0.0.1:8000/ws/chat/?token=${token}`;
+    const defaultWsHost =
+      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? '127.0.0.1:8000'
+        : window.location.host;
+    const wsUrl = import.meta.env.VITE_WS_URL
+      ? `${import.meta.env.VITE_WS_URL}${import.meta.env.VITE_WS_URL.includes('?') ? '&' : '?'}token=${token}`
+      : `${protocol}//${defaultWsHost}/ws/chat/?token=${token}`;
 
     try {
       const ws = new WebSocket(wsUrl);
