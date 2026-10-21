@@ -3,6 +3,7 @@ import { useAuthStore } from './store';
 import { LoginPage } from './pages/LoginPage';
 import { DirectoryPage } from './pages/DirectoryPage';
 import { ChatPage } from './pages/ChatPage';
+import './App.css';
 
 export const App: React.FC = () => {
   const { isAuthenticated, isLoading, loadUser, logout, user } = useAuthStore();
@@ -16,7 +17,9 @@ export const App: React.FC = () => {
     return (
       <div style={styles.loadingScreen}>
         <div style={styles.spinner}></div>
-        <p style={{ marginTop: '1rem', color: '#94a3b8' }}>Initializing FortiConnect...</p>
+        <p style={{ marginTop: '1rem', color: '#94a3b8', fontSize: '0.9rem', fontWeight: 500 }}>
+          Initializing FortiConnect Enterprise...
+        </p>
       </div>
     );
   }
@@ -26,49 +29,115 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div style={styles.appLayout}>
+    <div className="fc-app-layout">
       {/* Top Navbar */}
-      <header style={styles.navbar}>
-        <div style={styles.brand}>
-          <div style={styles.logoBadge}>FC</div>
-          <span style={styles.brandTitle}>FortiConnect</span>
-          <span style={styles.badgeEnv}>Secure MVP</span>
+      <header className="fc-navbar">
+        <div className="fc-brand">
+          <div className="fc-brand-logo">FC</div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span className="fc-brand-title">FortiConnect</span>
+              <span className="fc-brand-badge">Enterprise</span>
+            </div>
+          </div>
         </div>
 
-        <nav style={styles.navLinks}>
+        {/* Desktop Navigation Links (hidden on mobile) */}
+        <nav className="fc-nav-tabs fc-hide-mobile">
           <button
             onClick={() => setCurrentTab('chat')}
-            style={currentTab === 'chat' ? { ...styles.navButton, ...styles.navButtonActive } : styles.navButton}
+            className={`fc-nav-tab ${currentTab === 'chat' ? 'active' : ''}`}
           >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
             Messages & Groups
           </button>
           <button
             onClick={() => setCurrentTab('directory')}
-            style={currentTab === 'directory' ? { ...styles.navButton, ...styles.navButtonActive } : styles.navButton}
+            className={`fc-nav-tab ${currentTab === 'directory' ? 'active' : ''}`}
           >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
             Employee Directory
           </button>
         </nav>
 
-        <div style={styles.userProfile}>
-          <div style={styles.userInfo}>
-            <span style={styles.userName}>{user?.display_name || 'Employee'}</span>
-            <span style={styles.userDept}>{user?.department || 'Staff'}</span>
+        {/* User Profile & Sign Out */}
+        <div className="fc-user-bar">
+          <div className="fc-user-meta fc-hide-mobile">
+            <span className="fc-user-name">{user?.display_name || 'Employee'}</span>
+            <span className="fc-user-dept">{user?.department || 'Staff'} • {user?.employee_id || ''}</span>
           </div>
-          <button onClick={logout} style={styles.logoutButton}>
-            Sign Out
+
+          <div
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              backgroundColor: '#0284c7',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 700,
+              fontSize: '0.8125rem',
+              boxShadow: '0 0 0 2px #334155',
+            }}
+            title={`${user?.display_name || 'User'} (${user?.employee_id || ''})`}
+          >
+            {(user?.display_name || 'U').charAt(0).toUpperCase()}
+          </div>
+
+          <button onClick={logout} className="fc-logout-btn" title="Sign out of FortiConnect">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span className="fc-hide-mobile">Sign Out</span>
           </button>
         </div>
       </header>
 
       {/* Main Content Area */}
-      <main style={styles.mainContent}>
+      <main className="fc-main-view">
         {currentTab === 'chat' ? (
           <ChatPage />
         ) : (
           <DirectoryPage onSelectChat={() => setCurrentTab('chat')} />
         )}
       </main>
+
+      {/* Mobile Bottom Navigation Bar (visible only on <= 768px) */}
+      <nav className="fc-bottom-nav">
+        <button
+          onClick={() => setCurrentTab('chat')}
+          className={`fc-bottom-tab ${currentTab === 'chat' ? 'active' : ''}`}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span>Chats</span>
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('directory')}
+          className={`fc-bottom-tab ${currentTab === 'directory' ? 'active' : ''}`}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          <span>Directory</span>
+        </button>
+      </nav>
     </div>
   );
 };
@@ -82,115 +151,15 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0f172a',
+    backgroundColor: '#0b0f19',
     fontFamily: 'Inter, system-ui, sans-serif',
   },
   spinner: {
-    width: '40px',
-    height: '40px',
+    width: '44px',
+    height: '44px',
     border: '3px solid #1e293b',
     borderTop: '3px solid #38bdf8',
     borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
-  },
-  appLayout: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100vh',
-    fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
-    backgroundColor: '#0f172a',
-  },
-  navbar: {
-    height: '60px',
-    backgroundColor: '#1e293b',
-    borderBottom: '1px solid #334155',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '0 1.5rem',
-  },
-  brand: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.75rem',
-  },
-  logoBadge: {
-    width: '32px',
-    height: '32px',
-    borderRadius: '6px',
-    backgroundColor: '#0284c7',
-    color: '#ffffff',
-    fontWeight: '700',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '0.875rem',
-  },
-  brandTitle: {
-    fontSize: '1.125rem',
-    fontWeight: '700',
-    color: '#f8fafc',
-  },
-  badgeEnv: {
-    fontSize: '0.625rem',
-    padding: '0.125rem 0.375rem',
-    borderRadius: '4px',
-    backgroundColor: '#0369a1',
-    color: '#e0f2fe',
-    textTransform: 'uppercase',
-    fontWeight: '700',
-    letterSpacing: '0.05em',
-  },
-  navLinks: {
-    display: 'flex',
-    gap: '0.5rem',
-  },
-  navButton: {
-    background: 'none',
-    border: 'none',
-    color: '#94a3b8',
-    padding: '0.5rem 1rem',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontWeight: '500',
-    fontSize: '0.875rem',
-    transition: 'all 0.15s ease',
-  },
-  navButtonActive: {
-    backgroundColor: '#334155',
-    color: '#38bdf8',
-  },
-  userProfile: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '1rem',
-  },
-  userInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-  },
-  userName: {
-    fontSize: '0.8125rem',
-    fontWeight: '600',
-    color: '#f8fafc',
-  },
-  userDept: {
-    fontSize: '0.6875rem',
-    color: '#94a3b8',
-  },
-  logoutButton: {
-    padding: '0.375rem 0.75rem',
-    borderRadius: '6px',
-    border: '1px solid #475569',
-    backgroundColor: 'transparent',
-    color: '#cbd5e1',
-    fontSize: '0.75rem',
-    fontWeight: '500',
-    cursor: 'pointer',
-  },
-  mainContent: {
-    flex: 1,
-    overflow: 'hidden',
+    animation: 'spin 0.8s linear infinite',
   },
 };

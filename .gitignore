@@ -48,6 +48,10 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Database
+*.sqlite3
+*.db
+
 # Agent skills & customizations (strictly untracked)
 .agents/
 skills-lock.json

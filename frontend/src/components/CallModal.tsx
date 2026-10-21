@@ -187,7 +187,7 @@ export const CallModal: React.FC<CallModalProps> = ({
 
   return (
     <div style={styles.modalOverlay}>
-      <div style={styles.modalContainer}>
+      <div className="fc-call-modal-box" style={styles.modalContainer}>
         {/* Top Header */}
         <div style={styles.header}>
           <div>
@@ -227,7 +227,7 @@ export const CallModal: React.FC<CallModalProps> = ({
 
           {/* Local PiP Video Stream */}
           {callType === 'video' && (
-            <div style={styles.localPipWrapper}>
+            <div className="fc-call-pip-box" style={styles.localPipWrapper}>
               <video
                 ref={localVideoRef}
                 autoPlay
@@ -445,3 +445,4 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 4px 12px rgba(220, 38, 38, 0.4)',
   },
 };
+

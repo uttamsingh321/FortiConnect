@@ -43,7 +43,7 @@ export const LoginPage: React.FC = () => {
       <div style={styles.bgGlowTop}></div>
       <div style={styles.bgGlowBottom}></div>
 
-      <div style={styles.card}>
+      <div className="fc-login-card" style={styles.card}>
         <div style={styles.header}>
           <div style={styles.logoBadge}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
