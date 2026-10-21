@@ -914,15 +914,18 @@ class PresenceView(APIView):
         employee = get_object_or_404(Employee, pk=employee_id, is_active=True)
 
         try:
-            r = redis_lib.from_url(settings.CACHES["default"]["LOCATION"])
-            presence_key = f"presence:{employee.pk}"
-            raw = r.hgetall(presence_key)
-            if raw:
-                return Response({
-                    "employee_id": employee.pk,
-                    "status": raw.get(b"status", b"offline").decode(),
-                    "last_seen_at": raw.get(b"last_seen_at", b"").decode() or None,
-                })
+            cache_config = getattr(settings, "CACHES", {}).get("default", {})
+            location = cache_config.get("LOCATION")
+            if location and str(location).startswith("redis"):
+                r = redis_lib.from_url(location)
+                presence_key = f"presence:{employee.pk}"
+                raw = r.hgetall(presence_key)
+                if raw:
+                    return Response({
+                        "employee_id": employee.pk,
+                        "status": raw.get(b"status", b"offline").decode(),
+                        "last_seen_at": raw.get(b"last_seen_at", b"").decode() or None,
+                    })
         except Exception:
             pass
 

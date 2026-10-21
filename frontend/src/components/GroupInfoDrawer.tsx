@@ -740,3 +740,4 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
   },
 };
+

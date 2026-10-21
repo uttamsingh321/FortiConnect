@@ -279,20 +279,25 @@ class ChatConsumer(AsyncWebsocketConsumer):
             import redis as redis_lib
             from django.conf import settings
 
-            r = redis_lib.from_url(
-                settings.CACHES["default"]["LOCATION"],
-                decode_responses=False,
-            )
-            presence_key = f"presence:{self.employee.pk}"
-            now = datetime.now(dt_timezone.utc).isoformat()
-            r.hset(presence_key, mapping={
-                "status": status,
-                "last_seen_at": now,
-            })
-            if status == "online":
-                r.expire(presence_key, PRESENCE_TTL)
+            cache_config = getattr(settings, "CACHES", {}).get("default", {})
+            location = cache_config.get("LOCATION")
+            if location and str(location).startswith("redis"):
+                r = redis_lib.from_url(
+                    location,
+                    decode_responses=False,
+                )
+                presence_key = f"presence:{self.employee.pk}"
+                now = datetime.now(dt_timezone.utc).isoformat()
+                r.hset(presence_key, mapping={
+                    "status": status,
+                    "last_seen_at": now,
+                })
+                if status == "online":
+                    r.expire(presence_key, PRESENCE_TTL)
+                else:
+                    r.expire(presence_key, 86400)  # Keep offline record for 24h
             else:
-                r.expire(presence_key, 86400)  # Keep offline record for 24h
+                now = datetime.now(dt_timezone.utc).isoformat()
 
             # Also update DB presence record
             await self._update_db_presence(status, now)

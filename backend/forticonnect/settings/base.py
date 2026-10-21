@@ -42,6 +42,7 @@ ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 # Application definition
 # ---------------------------------------------------------------------------
 DJANGO_APPS = [
+    "daphne",
     "jazzmin",  # must be before django.contrib.admin
     "django.contrib.admin",
     "django.contrib.auth",
