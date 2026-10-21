@@ -13,7 +13,23 @@ export const ChatPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Common quick emojis
+  const COMMON_EMOJIS = ['👍', '👋', '🎉', '🔥', '❤️', '😊', '🚀', '✅', '🙏', '💯', '👏', '🎯', '👀', '💡', '✨'];
+
+  const addEmoji = (emoji: string) => {
+    setInputMessage((prev) => prev + emoji);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setInputMessage((prev) => `${prev}[Attached: ${file.name}] `);
+    }
+  };
 
   // Call management state
   const [activeCall, setActiveCall] = useState<{
@@ -271,18 +287,91 @@ export const ChatPage: React.FC = () => {
               <div ref={messagesEndRef} />
             </div>
 
-            <form onSubmit={handleSend} style={styles.composerForm}>
-              <input
-                type="text"
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                placeholder="Type a secure message..."
-                style={styles.composerInput}
-              />
-              <button type="submit" style={styles.composerSend}>
-                Send
-              </button>
-            </form>
+            {/* Message Composer Area */}
+            <div style={styles.composerWrapper}>
+              {/* Emoji Picker Popup */}
+              {showEmojiPicker && (
+                <div style={styles.emojiPicker}>
+                  <div style={styles.emojiPickerHeader}>
+                    <span>Quick Emojis</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowEmojiPicker(false)}
+                      style={styles.closeEmojiBtn}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div style={styles.emojiGrid}>
+                    {COMMON_EMOJIS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => addEmoji(emoji)}
+                        style={styles.emojiBtn}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handleSend} style={styles.composerForm}>
+                {/* Hidden File Input */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  style={{ display: 'none' }}
+                  onChange={handleFileUpload}
+                />
+
+                {/* Attachment / Paperclip Button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={styles.iconActionBtn}
+                  title="Attach file"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                  </svg>
+                </button>
+
+                {/* Emoji Picker Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  style={showEmojiPicker ? { ...styles.iconActionBtn, color: '#38bdf8' } : styles.iconActionBtn}
+                  title="Add emoji"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                    <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                    <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                  </svg>
+                </button>
+
+                {/* Text Input */}
+                <input
+                  type="text"
+                  value={inputMessage}
+                  onChange={(e) => setInputMessage(e.target.value)}
+                  placeholder="Type a secure message..."
+                  style={styles.composerInput}
+                />
+
+                {/* Send Button */}
+                <button type="submit" style={styles.composerSend}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px' }}>
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                  Send
+                </button>
+              </form>
+            </div>
 
             {/* WebRTC Video / Voice Call Modal */}
             {activeCall && activeConversationId && (
@@ -518,12 +607,75 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'right',
     marginTop: '0.25rem',
   },
-  composerForm: {
-    padding: '1rem 1.5rem',
-    borderTop: '1px solid #334155',
+  composerWrapper: {
+    position: 'relative',
     backgroundColor: '#1e293b',
+    borderTop: '1px solid #334155',
+  },
+  emojiPicker: {
+    position: 'absolute',
+    bottom: '100%',
+    left: '1.5rem',
+    marginBottom: '8px',
+    backgroundColor: '#1e293b',
+    border: '1px solid #475569',
+    borderRadius: '12px',
+    padding: '0.875rem',
+    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.6)',
+    width: '280px',
+    zIndex: 100,
+  },
+  emojiPickerHeader: {
     display: 'flex',
-    gap: '0.75rem',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '0.625rem',
+    fontSize: '0.8125rem',
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  closeEmojiBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    padding: '2px',
+  },
+  emojiGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(5, 1fr)',
+    gap: '0.375rem',
+  },
+  emojiBtn: {
+    background: 'none',
+    border: '1px solid transparent',
+    borderRadius: '6px',
+    fontSize: '1.35rem',
+    cursor: 'pointer',
+    padding: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.1s ease',
+  },
+  iconActionBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '0.5rem',
+    borderRadius: '8px',
+    transition: 'all 0.15s ease',
+  },
+  composerForm: {
+    padding: '0.875rem 1.5rem',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.625rem',
   },
   composerInput: {
     flex: 1,
@@ -536,7 +688,9 @@ const styles: Record<string, React.CSSProperties> = {
     outline: 'none',
   },
   composerSend: {
-    padding: '0.75rem 1.5rem',
+    display: 'flex',
+    alignItems: 'center',
+    padding: '0.75rem 1.25rem',
     borderRadius: '8px',
     border: 'none',
     backgroundColor: '#0284c7',
@@ -544,6 +698,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: '600',
     fontSize: '0.875rem',
     cursor: 'pointer',
+    transition: 'background-color 0.15s ease',
   },
   noChatSelected: {
     margin: 'auto',
