@@ -113,8 +113,48 @@ TEMPLATES = [
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
+
+# ``development`` and ``test`` override DATABASES themselves (SQLite fallback /
+# in-memory test database). Only the production settings module must have a
+# real, explicitly configured database.
+_IS_PRODUCTION = os.environ.get("DJANGO_SETTINGS_MODULE", "").endswith("production")
+
+
+def _database_config():
+    """Build the default DATABASES entry from ``DATABASE_URL``.
+
+    django-environ silently returns an empty dict for an empty/unparsable URL,
+    which only blows up much later with an opaque
+    "settings.DATABASES is improperly configured" error. Fail loudly with a
+    message that says what to do instead.
+    """
+    from django.core.exceptions import ImproperlyConfigured
+
+    db_url = env("DATABASE_URL", default="").strip()
+    if not db_url:
+        if _IS_PRODUCTION:
+            raise ImproperlyConfigured(
+                "DATABASE_URL is not set. Point it at a PostgreSQL instance, e.g. "
+                "postgres://user:password@host:5432/forticonnect"
+            )
+        # Development / test: these settings modules override DATABASES below.
+        return {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+
+    config = env.db_url_config(db_url)
+    if not config.get("ENGINE") or not config.get("NAME"):
+        raise ImproperlyConfigured(
+            f"DATABASE_URL {db_url!r} could not be parsed into a valid "
+            f"database configuration. Expected a URL like "
+            f"postgres://user:password@host:5432/dbname."
+        )
+    return config
+
+
 DATABASES = {
-    "default": env.db("DATABASE_URL"),
+    "default": _database_config(),
 }
 
 # ---------------------------------------------------------------------------

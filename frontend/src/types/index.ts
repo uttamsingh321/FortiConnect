@@ -138,3 +138,31 @@ export type WsMessage =
   | { type: 'call.answer'; sender_id: number; sender_name: string; payload: any; conversation_id: number }
   | { type: 'call.ice-candidate'; sender_id: number; payload: any; conversation_id: number }
   | { type: 'call.end'; sender_id: number; conversation_id: number };
+
+// ── Calendar Event Types ──────────────────────────────────────────────────
+export type CalendarEventType = 'meeting' | 'call' | 'review' | 'security' | 'deadline' | 'social';
+
+export interface CalendarAttendee {
+  id: number;
+  name: string;
+  department?: string;
+  employee_id?: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description?: string;
+  date: string; // YYYY-MM-DD
+  startTime: string; // HH:MM (24h format)
+  endTime: string; // HH:MM (24h format)
+  type: CalendarEventType;
+  location?: string;
+  meetingLink?: string;
+  attendees: CalendarAttendee[];
+  createdBy?: {
+    id: number;
+    name: string;
+  };
+  createdAt: string;
+}

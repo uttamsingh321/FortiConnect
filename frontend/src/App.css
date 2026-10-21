@@ -364,4 +364,16 @@
     margin: 1rem !important;
     max-width: calc(100vw - 2rem) !important;
   }
+
+  .fc-calendar-month-view {
+    flex-direction: column !important;
+    overflow-y: auto !important;
+  }
+
+  .fc-calendar-side-panel {
+    width: 100% !important;
+    border-right: none !important;
+    border-top: 1px solid #1f2937 !important;
+    min-height: 360px !important;
+  }
 }
