@@ -5,6 +5,7 @@ import { login } from '../api';
 export const LoginPage: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const loginSuccess = useAuthStore((state) => state.loginSuccess);
@@ -20,10 +21,10 @@ export const LoginPage: React.FC = () => {
       const detail =
         err.response?.data?.detail ||
         (err.response?.status === 401
-          ? 'Invalid username or password. Please try again.'
+          ? 'Invalid username or password. Please verify credentials or use quick-fill below.'
           : err.response?.status === 400
-          ? 'Invalid credentials format. Please check your username and password.'
-          : 'Unable to reach backend server. Please verify backend is running on port 8000.');
+          ? 'Invalid request. Please check username and password.'
+          : 'Unable to connect to server. Ensure Django backend is running at http://127.0.0.1:8000.');
       setError(detail);
     } finally {
       setIsSubmitting(false);
@@ -38,7 +39,7 @@ export const LoginPage: React.FC = () => {
 
   return (
     <div style={styles.container}>
-      {/* Background ambient decorative shapes */}
+      {/* Background ambient lighting */}
       <div style={styles.bgGlowTop}></div>
       <div style={styles.bgGlowBottom}></div>
 
@@ -76,7 +77,7 @@ export const LoginPage: React.FC = () => {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. emp001"
+                placeholder="emp001 or EMP001"
                 required
                 style={styles.input}
                 autoFocus
@@ -95,13 +96,34 @@ export const LoginPage: React.FC = () => {
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
               </svg>
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••••"
                 required
-                style={styles.input}
+                style={{ ...styles.input, paddingRight: '2.75rem' }}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={styles.eyeButton}
+                title={showPassword ? 'Hide password' : 'Show password'}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? (
+                  // Eye slash icon (hide)
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                  </svg>
+                ) : (
+                  // Eye icon (show)
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                )}
+              </button>
             </div>
           </div>
 
@@ -149,7 +171,7 @@ export const LoginPage: React.FC = () => {
             </button>
           </div>
           <p style={styles.quickHelp}>
-            Password pattern: <code>&lt;username&gt;Pass123!</code>
+            Pattern: <code>emp001</code> / <code>emp001Pass123!</code>
           </p>
         </div>
       </div>
@@ -160,18 +182,19 @@ export const LoginPage: React.FC = () => {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100vh',
-    width: '100vw',
+    width: '100%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0a0f1d',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     position: 'relative',
-    overflow: 'hidden',
-    padding: '1.5rem',
+    overflowY: 'auto',
+    padding: '2rem 1rem',
+    boxSizing: 'border-box',
   },
   bgGlowTop: {
-    position: 'absolute',
+    position: 'fixed',
     top: '-15%',
     left: '20%',
     width: '600px',
@@ -179,9 +202,10 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '50%',
     background: 'radial-gradient(circle, rgba(14, 165, 233, 0.12) 0%, rgba(14, 165, 233, 0) 70%)',
     pointerEvents: 'none',
+    zIndex: 0,
   },
   bgGlowBottom: {
-    position: 'absolute',
+    position: 'fixed',
     bottom: '-20%',
     right: '15%',
     width: '650px',
@@ -189,16 +213,18 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '50%',
     background: 'radial-gradient(circle, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0) 70%)',
     pointerEvents: 'none',
+    zIndex: 0,
   },
   card: {
     position: 'relative',
-    zIndex: 1,
+    zIndex: 10,
     backgroundColor: '#111827',
     borderRadius: '16px',
-    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.07)',
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08)',
     width: '100%',
     maxWidth: '460px',
     padding: '2.5rem',
+    margin: 'auto',
   },
   header: {
     display: 'flex',
@@ -276,7 +302,21 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#f9fafb',
     fontSize: '0.925rem',
     outline: 'none',
-    transition: 'all 0.15s ease-in-out',
+    transition: 'border-color 0.15s ease-in-out',
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: '12px',
+    background: 'none',
+    border: 'none',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '4px',
+    borderRadius: '4px',
+    transition: 'color 0.15s ease',
   },
   button: {
     marginTop: '0.5rem',
@@ -336,14 +376,14 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
   },
   pillButton: {
-    padding: '0.375rem 0.65rem',
+    padding: '0.4rem 0.75rem',
     backgroundColor: '#1f2937',
     border: '1px solid #374151',
     borderRadius: '6px',
     color: '#38bdf8',
     fontSize: '0.75rem',
     cursor: 'pointer',
-    transition: 'background-color 0.15s ease',
+    transition: 'all 0.15s ease',
   },
   quickHelp: {
     margin: 0,
