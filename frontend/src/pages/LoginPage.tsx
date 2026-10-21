@@ -8,7 +8,49 @@ export const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showServerModal, setShowServerModal] = useState(false);
+  const [serverUrl, setServerUrl] = useState(() => {
+    return (
+      (typeof window !== 'undefined' && localStorage.getItem('fc_custom_api_url')) ||
+      'https://draft-vermont-totals-distinction.trycloudflare.com/api'
+    );
+  });
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
   const loginSuccess = useAuthStore((state) => state.loginSuccess);
+
+  const testConnection = async (urlToTest: string) => {
+    setTestStatus('testing');
+    try {
+      const cleanUrl = urlToTest.trim().replace(/\/$/, '');
+      const healthUrl = cleanUrl.endsWith('/api') ? `${cleanUrl}/health/` : `${cleanUrl}/api/health/`;
+      const res = await fetch(healthUrl, { method: 'GET' });
+      if (res.ok) {
+        setTestStatus('success');
+      } else {
+        setTestStatus('failed');
+      }
+    } catch (_) {
+      setTestStatus('failed');
+    }
+  };
+
+  const saveServerUrl = () => {
+    const cleanUrl = serverUrl.trim().replace(/\/$/, '');
+    localStorage.setItem('fc_custom_api_url', cleanUrl);
+    // Derive WS url
+    const wsUrl = cleanUrl.replace(/^http/, 'ws').replace(/\/api$/, '') + '/ws/chat/';
+    localStorage.setItem('fc_custom_ws_url', wsUrl);
+    setShowServerModal(false);
+    window.location.reload();
+  };
+
+  const resetServerUrl = () => {
+    localStorage.removeItem('fc_custom_api_url');
+    localStorage.removeItem('fc_custom_ws_url');
+    setServerUrl('https://draft-vermont-totals-distinction.trycloudflare.com/api');
+    setShowServerModal(false);
+    window.location.reload();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -173,8 +215,93 @@ export const LoginPage: React.FC = () => {
           <p style={styles.quickHelp}>
             Pattern: <code>emp001</code> / <code>emp001Pass123!</code>
           </p>
+
+          <div style={{ marginTop: '1.5rem', textAlign: 'center', borderTop: '1px solid #1f2937', paddingTop: '1rem' }}>
+            <button
+              type="button"
+              onClick={() => setShowServerModal(true)}
+              style={styles.serverSettingsBtn}
+            >
+              <span>⚙️ Server Connection Endpoint</span>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Server Configuration Modal */}
+      {showServerModal && (
+        <div style={styles.serverModalOverlay}>
+          <div style={styles.serverModalBox}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '1.15rem', fontWeight: 700 }}>
+                ⚙️ Backend Server Connection
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowServerModal(false)}
+                style={styles.closeBtn}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: 1.5, margin: '0 0 1rem' }}>
+              Configure where FortiConnect points to for the Django backend API and WebSockets.
+            </p>
+
+            <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.4rem' }}>
+              Backend API Base URL:
+            </label>
+            <input
+              type="text"
+              value={serverUrl}
+              onChange={(e) => {
+                setServerUrl(e.target.value);
+                setTestStatus('idle');
+              }}
+              placeholder="https://your-backend.onrender.com/api"
+              style={styles.input}
+            />
+
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => testConnection(serverUrl)}
+                style={styles.testBtn}
+              >
+                {testStatus === 'testing' ? 'Testing...' : 'Test Connection'}
+              </button>
+              {testStatus === 'success' && (
+                <span style={{ color: '#4ade80', fontSize: '0.85rem', fontWeight: 600 }}>
+                  🟢 Server Online (200 OK)
+                </span>
+              )}
+              {testStatus === 'failed' && (
+                <span style={{ color: '#f87171', fontSize: '0.85rem', fontWeight: 600 }}>
+                  🔴 Server Unreachable
+                </span>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.75rem', borderTop: '1px solid #1f2937', paddingTop: '1rem' }}>
+              <button
+                type="button"
+                onClick={resetServerUrl}
+                style={styles.resetBtn}
+              >
+                Reset to Default
+              </button>
+              <button
+                type="button"
+                onClick={saveServerUrl}
+                style={styles.saveBtn}
+              >
+                Save & Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -390,5 +517,72 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.72rem',
     color: '#64748b',
     textAlign: 'center',
+  },
+  serverSettingsBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#94a3b8',
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    textDecoration: 'underline',
+    padding: '4px 8px',
+  },
+  serverModalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(5, 10, 20, 0.85)',
+    backdropFilter: 'blur(8px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    padding: '1rem',
+  },
+  serverModalBox: {
+    backgroundColor: '#111827',
+    border: '1px solid #374151',
+    borderRadius: '14px',
+    padding: '1.75rem',
+    width: '100%',
+    maxWidth: '520px',
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+  },
+  testBtn: {
+    padding: '0.5rem 1rem',
+    backgroundColor: '#1f2937',
+    border: '1px solid #4b5563',
+    borderRadius: '8px',
+    color: '#f8fafc',
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  resetBtn: {
+    padding: '0.55rem 1rem',
+    backgroundColor: 'transparent',
+    border: '1px solid #475569',
+    borderRadius: '8px',
+    color: '#94a3b8',
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  saveBtn: {
+    padding: '0.55rem 1.25rem',
+    backgroundColor: '#0284c7',
+    border: 'none',
+    borderRadius: '8px',
+    color: '#ffffff',
+    fontSize: '0.8rem',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  closeBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#94a3b8',
+    fontSize: '1.1rem',
+    cursor: 'pointer',
+    padding: '4px',
   },
 };
