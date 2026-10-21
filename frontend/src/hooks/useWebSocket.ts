@@ -82,5 +82,11 @@ export function useWebSocket(onMessageReceived?: (msg: WsMessage) => void) {
     }
   }, []);
 
-  return { isConnected, error, subscribe, unsubscribe };
+  const sendSignal = useCallback((payload: any) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(payload));
+    }
+  }, []);
+
+  return { isConnected, error, subscribe, unsubscribe, sendSignal };
 }

@@ -100,6 +100,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self._handle_heartbeat()
         elif msg_type == "typing.start" or msg_type == "typing.stop":
             await self._handle_typing(data, msg_type)
+        elif msg_type.startswith("call."):
+            await self._handle_call_signal(data)
         else:
             await self._send_error(f"Unknown message type: {msg_type}")
 
@@ -161,9 +163,47 @@ class ChatConsumer(AsyncWebsocketConsumer):
             },
         )
 
+    async def _handle_call_signal(self, data):
+        """Relay WebRTC signaling messages (offer, answer, ice-candidate, end) to conversation participants."""
+        conversation_id = data.get("conversation_id")
+        if not isinstance(conversation_id, int):
+            return
+
+        group_name = f"conversation_{conversation_id}"
+        if group_name not in self.subscribed_groups:
+            # Auto-check membership
+            is_member = await self._check_membership(conversation_id)
+            if not is_member:
+                return
+
+        # Broadcast signal to other members in this conversation
+        await self.channel_layer.group_send(
+            group_name,
+            {
+                "type": "call.signal",
+                "sender_id": self.employee.pk,
+                "sender_name": self.employee.display_name,
+                "signal_data": data,
+                "conversation_id": conversation_id,
+            },
+        )
+
     # -----------------------------------------------------------------------
     # Channel layer event handlers (called by channel layer group_send)
     # -----------------------------------------------------------------------
+
+    async def call_signal(self, event):
+        """Deliver WebRTC signaling events, excluding the sender itself."""
+        if event.get("sender_id") == self.employee.pk:
+            return
+        await self.send(json.dumps({
+            "type": event["signal_data"].get("type"),
+            "sender_id": event["sender_id"],
+            "sender_name": event["sender_name"],
+            "payload": event["signal_data"].get("payload"),
+            "call_type": event["signal_data"].get("call_type", "video"),
+            "conversation_id": event["conversation_id"],
+        }))
 
     async def chat_message(self, event):
         """Deliver a new message to this WebSocket client."""

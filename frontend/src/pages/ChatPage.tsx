@@ -3,6 +3,7 @@ import type { Message } from '../types';
 import { getConversations, getMessages, sendMessage, createGroupConversation } from '../api';
 import { useChatStore, useAuthStore } from '../store';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { CallModal } from '../components/CallModal';
 
 export const ChatPage: React.FC = () => {
   const user = useAuthStore((state) => state.user);
@@ -14,18 +15,34 @@ export const ChatPage: React.FC = () => {
   const [newGroupName, setNewGroupName] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Call management state
+  const [activeCall, setActiveCall] = useState<{
+    callType: 'voice' | 'video';
+    isIncoming: boolean;
+    incomingOffer?: any;
+    contactName: string;
+  } | null>(null);
+
   // WebSocket message receiver
   const handleWsMessage = (data: any) => {
     if (data.type === 'message.new' && data.message) {
       if (data.message.conversation === activeConversationId) {
         setMessages((prev) => [...prev, data.message]);
       }
-      // Update last message in conversation list
       loadConversations();
+    } else if (data.type === 'call.offer') {
+      setActiveCall({
+        callType: data.call_type || 'video',
+        isIncoming: true,
+        incomingOffer: data.payload,
+        contactName: data.sender_name || 'Incoming Call',
+      });
+    } else if (data.type === 'call.end') {
+      setActiveCall(null);
     }
   };
 
-  const { isConnected, subscribe, unsubscribe } = useWebSocket(handleWsMessage);
+  const { isConnected, subscribe, unsubscribe, sendSignal } = useWebSocket(handleWsMessage);
 
   const loadConversations = async () => {
     try {
@@ -181,6 +198,50 @@ export const ChatPage: React.FC = () => {
                   </span>
                 </span>
               </div>
+
+              {/* Voice & Video Call Action Buttons */}
+              <div style={styles.callButtonsGroup}>
+                <button
+                  onClick={() =>
+                    setActiveCall({
+                      callType: 'voice',
+                      isIncoming: false,
+                      contactName:
+                        activeConv.type === 'group'
+                          ? activeConv.name
+                          : activeConv.memberships?.find((m) => m.employee.id !== user?.id)?.employee.display_name || 'Contact',
+                    })
+                  }
+                  style={styles.callActionButton}
+                  title="Start Voice Call"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                  </svg>
+                  Voice
+                </button>
+
+                <button
+                  onClick={() =>
+                    setActiveCall({
+                      callType: 'video',
+                      isIncoming: false,
+                      contactName:
+                        activeConv.type === 'group'
+                          ? activeConv.name
+                          : activeConv.memberships?.find((m) => m.employee.id !== user?.id)?.employee.display_name || 'Contact',
+                    })
+                  }
+                  style={{ ...styles.callActionButton, backgroundColor: '#0284c7' }}
+                  title="Start Video Call"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                  </svg>
+                  Video
+                </button>
+              </div>
             </div>
 
             <div style={styles.messagesContainer}>
@@ -222,6 +283,19 @@ export const ChatPage: React.FC = () => {
                 Send
               </button>
             </form>
+
+            {/* WebRTC Video / Voice Call Modal */}
+            {activeCall && activeConversationId && (
+              <CallModal
+                conversationId={activeConversationId}
+                contactName={activeCall.contactName}
+                callType={activeCall.callType}
+                isIncoming={activeCall.isIncoming}
+                incomingOffer={activeCall.incomingOffer}
+                sendSignal={sendSignal}
+                onClose={() => setActiveCall(null)}
+              />
+            )}
           </>
         ) : (
           <div style={styles.noChatSelected}>
@@ -359,6 +433,27 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '1rem 1.5rem',
     borderBottom: '1px solid #334155',
     backgroundColor: '#1e293b',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  callButtonsGroup: {
+    display: 'flex',
+    gap: '0.5rem',
+  },
+  callActionButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.4rem',
+    padding: '0.45rem 0.85rem',
+    borderRadius: '6px',
+    border: 'none',
+    backgroundColor: '#059669',
+    color: '#ffffff',
+    fontSize: '0.8125rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'background-color 0.15s ease',
   },
   chatHeaderTitle: {
     margin: 0,
