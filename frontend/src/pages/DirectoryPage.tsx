@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import type { EmployeeListItem } from '../types';
 import { getEmployees, createDirectConversation } from '../api';
-import { useChatStore } from '../store';
+import { useChatStore, useAuthStore } from '../store';
 
 export const DirectoryPage: React.FC<{ onSelectChat: () => void }> = ({ onSelectChat }) => {
   const [employees, setEmployees] = useState<EmployeeListItem[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const currentUser = useAuthStore((state) => state.user);
   const setActiveConversationId = useChatStore((state) => state.setActiveConversationId);
 
   const fetchEmployees = async (query?: string) => {
@@ -35,8 +36,9 @@ export const DirectoryPage: React.FC<{ onSelectChat: () => void }> = ({ onSelect
       const conv = await createDirectConversation(employeeId);
       setActiveConversationId(conv.id);
       onSelectChat();
-    } catch (err) {
-      alert('Could not start conversation with this employee.');
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || 'Could not start conversation with this employee.';
+      alert(msg);
     }
   };
 
@@ -93,13 +95,22 @@ export const DirectoryPage: React.FC<{ onSelectChat: () => void }> = ({ onSelect
                 </div>
               </div>
 
-              <button
-                disabled={!emp.is_active}
-                onClick={() => handleStartChat(emp.id)}
-                style={emp.is_active ? styles.chatButton : { ...styles.chatButton, opacity: 0.5, cursor: 'not-allowed' }}
-              >
-                Send Message
-              </button>
+              {emp.id === currentUser?.id ? (
+                <button
+                  disabled
+                  style={{ ...styles.chatButton, backgroundColor: '#334155', color: '#94a3b8', cursor: 'default' }}
+                >
+                  You (Current Account)
+                </button>
+              ) : (
+                <button
+                  disabled={!emp.is_active}
+                  onClick={() => handleStartChat(emp.id)}
+                  style={emp.is_active ? styles.chatButton : { ...styles.chatButton, opacity: 0.5, cursor: 'not-allowed' }}
+                >
+                  Send Message
+                </button>
+              )}
             </div>
           ))}
         </div>
