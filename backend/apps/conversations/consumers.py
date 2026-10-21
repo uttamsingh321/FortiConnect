@@ -64,7 +64,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.accept()
         await self._set_presence("online")
 
-        logger.info("ws_connected", user_id=user.pk, employee_id=self.employee.pk)
+        # Join employee personal group for direct notifications & calls
+        emp_group = f"employee_{self.employee.pk}"
+        await self.channel_layer.group_add(emp_group, self.channel_name)
+        self.subscribed_groups.add(emp_group)
+
+        # Automatically subscribe to all active conversations of the employee
+        try:
+            conv_ids = await self._get_active_conversation_ids()
+            for cid in conv_ids:
+                conv_group = f"conversation_{cid}"
+                await self.channel_layer.group_add(conv_group, self.channel_name)
+                self.subscribed_groups.add(conv_group)
+        except Exception as e:
+            logger.warning("ws_auto_subscribe_failed", error=str(e))
+
+        logger.info("ws_connected", user_id=user.pk, employee_id=self.employee.pk, group_count=len(self.subscribed_groups))
 
         # Notify the client of successful connection
         await self.send(json.dumps({"type": "connection.established", "employee_id": self.employee.pk}))
@@ -272,6 +287,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
             employee=self.employee,
             removed_at__isnull=True,
         ).exists()
+
+    @database_sync_to_async
+    def _get_active_conversation_ids(self) -> list:
+        from .models import ConversationMembership
+        return list(
+            ConversationMembership.objects.filter(
+                employee=self.employee,
+                removed_at__isnull=True,
+            ).values_list("conversation_id", flat=True)
+        )
 
     async def _set_presence(self, status: str):
         """Update presence in Redis."""

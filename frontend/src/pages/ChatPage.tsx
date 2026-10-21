@@ -44,11 +44,26 @@ export const ChatPage: React.FC = () => {
 
   // Call management state
   const [activeCall, setActiveCall] = useState<{
+    conversationId: number;
     callType: 'voice' | 'video';
     isIncoming: boolean;
     incomingOffer?: any;
     contactName: string;
   } | null>(null);
+
+  const [lastCallSignal, setLastCallSignal] = useState<{
+    type: string;
+    conversation_id: number;
+    sender_id?: number;
+    payload?: any;
+  } | null>(null);
+
+  // Request browser notification permission on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
 
   // WebSocket message receiver
   const handleWsMessage = useCallback((data: any) => {
@@ -88,13 +103,27 @@ export const ChatPage: React.FC = () => {
       }
     } else if (data.type === 'call.offer') {
       setActiveCall({
+        conversationId: data.conversation_id,
         callType: data.call_type || 'video',
         isIncoming: true,
         incomingOffer: data.payload,
         contactName: data.sender_name || 'Incoming Call',
       });
-    } else if (data.type === 'call.end') {
-      setActiveCall(null);
+      // Show system desktop notification if available
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification('📞 Incoming FortiConnect Call', {
+            body: `${data.sender_name || 'A teammate'} is calling you (${data.call_type === 'video' ? 'Video' : 'Voice'}). Click to view.`,
+          });
+        } catch (_) {}
+      }
+    } else if (data.type === 'call.answer' || data.type === 'call.ice-candidate' || data.type === 'call.end') {
+      setLastCallSignal(data);
+      if (data.type === 'call.end') {
+        setTimeout(() => {
+          setActiveCall((curr) => (curr && curr.conversationId === data.conversation_id ? null : curr));
+        }, 800);
+      }
     }
   }, [activeConversationId, user?.id]);
 
@@ -437,6 +466,7 @@ export const ChatPage: React.FC = () => {
                 <button
                   onClick={() =>
                     setActiveCall({
+                      conversationId: activeConv.id,
                       callType: 'voice',
                       isIncoming: false,
                       contactName: activeConv.name || 'Contact',
@@ -455,6 +485,7 @@ export const ChatPage: React.FC = () => {
                 <button
                   onClick={() =>
                     setActiveCall({
+                      conversationId: activeConv.id,
                       callType: 'video',
                       isIncoming: false,
                       contactName: activeConv.name || 'Contact',
@@ -804,19 +835,6 @@ export const ChatPage: React.FC = () => {
               </form>
             </div>
 
-            {/* WebRTC Video / Voice Call Modal */}
-            {activeCall && activeConversationId && (
-              <CallModal
-                conversationId={activeConversationId}
-                contactName={activeCall.contactName}
-                callType={activeCall.callType}
-                isIncoming={activeCall.isIncoming}
-                incomingOffer={activeCall.incomingOffer}
-                sendSignal={sendSignal}
-                onClose={() => setActiveCall(null)}
-              />
-            )}
-
             {/* Group Info Drawer */}
             {showGroupDrawer && activeConv.type === 'group' && (
               <GroupInfoDrawer
@@ -858,6 +876,23 @@ export const ChatPage: React.FC = () => {
           onGroupCreated={async (newConv) => {
             await loadConversations();
             setActiveConversationId(newConv.id);
+          }}
+        />
+      )}
+
+      {/* WebRTC Video / Voice Call Modal (Root-level so incoming calls ring anywhere) */}
+      {activeCall && (
+        <CallModal
+          conversationId={activeCall.conversationId}
+          contactName={activeCall.contactName}
+          callType={activeCall.callType}
+          isIncoming={activeCall.isIncoming}
+          incomingOffer={activeCall.incomingOffer}
+          incomingSignal={lastCallSignal}
+          sendSignal={sendSignal}
+          onClose={() => {
+            setActiveCall(null);
+            setLastCallSignal(null);
           }}
         />
       )}

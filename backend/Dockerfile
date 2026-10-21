@@ -25,3 +25,4 @@ EXPOSE 8000
 
 # Run migrations and start Daphne ASGI server
 CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py seed_data && daphne -b 0.0.0.0 -p $PORT forticonnect.asgi:application"]
+

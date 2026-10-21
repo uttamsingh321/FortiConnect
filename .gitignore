@@ -30,6 +30,11 @@ wheels/
 .installed.cfg
 *.egg
 
+# Media & Uploads
+media/
+backend/media/
+*.sqlite3
+
 # Node / Web
 node_modules/
 npm-debug.log*
