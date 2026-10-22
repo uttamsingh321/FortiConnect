@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import type { Message } from '../types';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import type { Message, MessageAttachment } from '../types';
 import {
   getConversations,
   getMessages,
@@ -15,6 +15,7 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import { CallModal } from '../components/CallModal';
 import { CreateGroupModal } from '../components/CreateGroupModal';
 import { GroupInfoDrawer } from '../components/GroupInfoDrawer';
+import { ContactInfoDrawer } from '../components/ContactInfoDrawer';
 import data from '@emoji-mart/data';
 import Picker from '@emoji-mart/react';
 
@@ -28,6 +29,7 @@ export const ChatPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [showGroupDrawer, setShowGroupDrawer] = useState(false);
+  const [showContactDrawer, setShowContactDrawer] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
@@ -199,9 +201,25 @@ export const ChatPage: React.FC = () => {
     }
   }, [messages, showSearch]);
 
+  useEffect(() => {
+    setShowContactDrawer(false);
+    setShowGroupDrawer(false);
+  }, [activeConversationId]);
+
   const activeConv = conversations.find((c) => c.id === activeConversationId);
   const myMembership = activeConv?.memberships?.find((m) => m.employee.id === user?.id);
   const isAdminOrOwner = myMembership?.role === 'owner' || myMembership?.role === 'admin';
+  const otherMember = activeConv?.memberships?.find((m) => m.employee.id !== user?.id)?.employee;
+
+  const conversationAttachments = useMemo(() => {
+    const list: MessageAttachment[] = [];
+    messages.forEach((m) => {
+      if (m.attachments && m.attachments.length > 0) {
+        list.push(...m.attachments);
+      }
+    });
+    return list;
+  }, [messages]);
 
   // Typing event handler
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -377,7 +395,13 @@ export const ChatPage: React.FC = () => {
                 </button>
 
                 <div
-                  onClick={() => activeConv.type === 'group' && setShowGroupDrawer(true)}
+                  onClick={() => {
+                    if (activeConv.type === 'group') {
+                      setShowGroupDrawer(true);
+                    } else {
+                      setShowContactDrawer(true);
+                    }
+                  }}
                   style={{
                     width: '38px',
                     height: '38px',
@@ -391,9 +415,10 @@ export const ChatPage: React.FC = () => {
                     fontSize: activeConv.avatar ? '1.25rem' : '0.9rem',
                     marginRight: '0.75rem',
                     flexShrink: 0,
-                    cursor: activeConv.type === 'group' ? 'pointer' : 'default',
+                    cursor: 'pointer',
+                    transition: 'transform 0.15s ease',
                   }}
-                  title={activeConv.type === 'group' ? 'Click for group details' : ''}
+                  title={activeConv.type === 'group' ? 'Channel details & members' : 'View contact profile'}
                 >
                   {activeConv.avatar || (
                     activeConv.type === 'group'
@@ -404,15 +429,19 @@ export const ChatPage: React.FC = () => {
                     .toUpperCase()}
                 </div>
 
-                <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                <div
+                  onClick={() => {
+                    if (activeConv.type === 'group') {
+                      setShowGroupDrawer(true);
+                    } else {
+                      setShowContactDrawer(true);
+                    }
+                  }}
+                  style={{ minWidth: 0, overflow: 'hidden', cursor: 'pointer' }}
+                  title={activeConv.type === 'group' ? 'Channel details & members' : 'View contact profile'}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <h3
-                      onClick={() => activeConv.type === 'group' && setShowGroupDrawer(true)}
-                      style={{
-                        ...styles.chatHeaderTitle,
-                        cursor: activeConv.type === 'group' ? 'pointer' : 'default',
-                      }}
-                    >
+                    <h3 style={{ ...styles.chatHeaderTitle, cursor: 'pointer' }}>
                       {activeConv.type === 'group'
                         ? activeConv.name
                         : activeConv.memberships?.find((m) => m.employee.id !== user?.id)?.employee.display_name}
@@ -422,14 +451,13 @@ export const ChatPage: React.FC = () => {
 
                   <div style={styles.chatHeaderSub}>
                     {activeConv.type === 'group' ? (
-                      <span
-                        onClick={() => setShowGroupDrawer(true)}
-                        style={{ cursor: 'pointer', color: '#38bdf8' }}
-                      >
+                      <span style={{ cursor: 'pointer', color: '#38bdf8' }}>
                         👥 {activeConv.memberships?.length || 0} Members
                       </span>
                     ) : (
-                      <span>Direct Message</span>
+                      <span style={{ cursor: 'pointer', color: '#38bdf8' }}>
+                        Direct Message • View Profile
+                      </span>
                     )}
                     <span>•</span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -468,20 +496,24 @@ export const ChatPage: React.FC = () => {
                   </svg>
                 </button>
 
-                {/* Group Info Drawer Toggle */}
-                {activeConv.type === 'group' && (
-                  <button
-                    onClick={() => setShowGroupDrawer(true)}
-                    style={styles.headerToolBtn}
-                    title="Channel Information & Members"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="12" y1="16" x2="12" y2="12"></line>
-                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                    </svg>
-                  </button>
-                )}
+                {/* Channel / Contact Info Drawer Toggle */}
+                <button
+                  onClick={() => {
+                    if (activeConv.type === 'group') {
+                      setShowGroupDrawer(true);
+                    } else {
+                      setShowContactDrawer(true);
+                    }
+                  }}
+                  style={styles.headerToolBtn}
+                  title={activeConv.type === 'group' ? 'Channel Information & Members' : 'Contact Information'}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                  </svg>
+                </button>
 
                 {/* Voice Call */}
                 <button
@@ -876,6 +908,25 @@ export const ChatPage: React.FC = () => {
                   setActiveConversationId(null);
                   loadConversations();
                 }}
+              />
+            )}
+
+            {/* Contact Info Drawer (WhatsApp style for Direct Messages) */}
+            {showContactDrawer && otherMember && activeConv.type === 'direct' && (
+              <ContactInfoDrawer
+                employee={otherMember}
+                conversation={activeConv}
+                attachments={conversationAttachments}
+                onClose={() => setShowContactDrawer(false)}
+                onStartCall={(callType) =>
+                  setActiveCall({
+                    conversationId: activeConv.id,
+                    callType,
+                    isIncoming: false,
+                    contactName: otherMember.display_name || 'Contact',
+                  })
+                }
+                onSearch={() => setShowSearch(true)}
               />
             )}
           </>
